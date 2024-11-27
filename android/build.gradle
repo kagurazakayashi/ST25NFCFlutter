@@ -1,0 +1,153 @@
+group = "moe.yashi.nfc_ftm"
+version = "1.0"
+def sdkFound
+def foundST25SDKLibraryFeatures () {
+    def extension
+    new File("./android/libs/").eachFile() { file ->
+        def name = file.getName()
+        sdkFound = name
+        println file.getName().substring(0,7)
+        if (file.getName().substring(0,7) == "st25sdk") {
+            println name.substring(8,name.length()-10)
+            if ( (name.length() - 10 ) > 8) {
+                extension = name.substring(8, name.length() - 10)
+            } else {
+                extension = "public"
+            }
+        }
+    }
+    return extension
+}
+
+def foundST25SDKLibraryFileName () {
+    def name = ""
+    def numberOfLibFound = 0
+    new File("D:\\object\\flutter package\\nfc_ftm\\android\\libs").eachFile() { file ->
+        name = file.getName()
+        if (name == "") {
+            println " *********** WARNING no st25sdk lib found *********** "
+        } else {
+            numberOfLibFound = numberOfLibFound +1
+        }
+        println name
+    }
+    if (numberOfLibFound > 1) {
+        println " *********** WARNING multiple st25sdk lib found *********** "
+    }
+    return name
+}
+sdkFound =  foundST25SDKLibraryFileName()
+
+def buildSdkFeature (String name) {
+    println " *********** st25sdk used : " + name
+    def values = name.split('-')
+    for (int idx =0;idx <values.size();idx++) {
+        println values[idx]
+    }
+    def extension = ""
+    if (values.size() >= 2) {
+        for (int idx =1;idx <values.size()-1;idx++) {
+            extension = extension + "-" + values[idx]
+        }
+    } else {
+        extension = extension + "-" + "public"
+    }
+    return extension
+}
+def features = buildSdkFeature(sdkFound)
+
+task ST25SDKNameTask {
+    println ("Getting ST25SDK name for apk name")
+    println(features)
+}
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:7.3.0")
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+android {
+    if (project.android.hasProperty("namespace")) {
+        namespace = "moe.yashi.nfc_ftm"
+    }
+
+    compileSdk = 34
+
+    compileOptions {
+        encoding = 'UTF-8'  // 强制使用 UTF-8 编码
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    defaultConfig {
+        minSdk = 21
+    }
+
+    dependencies {
+        testImplementation("junit:junit:4.13.2")
+        testImplementation("org.mockito:mockito-core:5.0.0")
+    }
+
+    testOptions {
+        unitTests.all {
+            testLogging {
+               events "passed", "skipped", "failed", "standardOut", "standardError"
+               outputs.upToDateWhen {false}
+               showStandardStreams = true
+            }
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (graph.hasTask(generateDebugSources)) {
+        print "=== Debug Build ===\n"
+    } else {
+        print "=== Release Build ===\n"
+    }
+}
+
+repositories {
+}
+
+configurations {
+    umlgraphDoclet
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+
+    implementation files('libs/st25sdk-1.10.0.jar')
+//    implementation project(':st25.android.reader.interface')
+
+    implementation 'com.google.android.material:material:1.9.0'
+
+    // Needed for ST25SDK
+    implementation 'com.madgag.spongycastle:bcpkix-jdk15on:1.58.0.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // Needed for st25android
+    implementation 'org.apache.commons:commons-lang3:3.5'
+
+//    implementation 'androidx.appcompat:appcompat:1.6.1'
+//    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
+//    implementation 'androidx.palette:palette:1.0.0'
+
+//    umlgraphDoclet 'org.umlgraph:umlgraph:5.6.6'
+
+}

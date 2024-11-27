@@ -1,0 +1,194 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
+import 'nfc_ftm_platform_interface.dart';
+import 'nfc_obj.dart';
+
+/// An implementation of [NfcFtmPlatform] that uses method channels.
+class MethodChannelNfcFtm extends NfcFtmPlatform {
+  /// The method channel used to interact with the native platform.
+  @visibleForTesting
+  // 向原生发送通知，原生可以回复该通知
+  final MethodChannel methodChannel = const MethodChannel('nfc_ftm_to_native');
+  // 接收原生随时发送的通知
+  final EventChannel eventChannel = const EventChannel('nfc_ftm_to_flutter');
+
+  // Stream<Map>? stream;
+  static StreamController<String> botToastController =
+      StreamController<String>.broadcast();
+  static Stream<String> get botToastStream => botToastController.stream;
+
+  // static StreamController<String>
+
+  NfcTagCallback? nfcTagCallback;
+  TransmissionProgress? transmissionProgress;
+  ReceptionProgress? receptionProgress;
+
+  MethodChannelNfcFtm() {
+    eventChannel.receiveBroadcastStream().listen((event) {
+      print('>>>event: $event');
+      if (event.runtimeType.toString() != "_Map<Object?, Object?>") {
+        return;
+      }
+      switch (event['k']) {
+        case "onDiscovered":
+          if (event is Map) {
+            final mapevent = Map<String, Object>.from(event);
+            final tag = $GetNfcTag(mapevent);
+            if (nfcTagCallback != null) {
+              nfcTagCallback!(tag);
+            }
+          } else {
+            throw ArgumentError('Unexpected event format: $event');
+          }
+          break;
+        case "botToast":
+          botToastController.add(event['v'] as String);
+          break;
+        case "transmissionProgress":
+          if (event is Map) {
+            final mapevent = Map<String, Object>.from(event);
+            final progress = mapevent['progress'] as int;
+            final secondaryProgress = mapevent['secondaryProgress'] as int;
+            final transmittedBytes = mapevent['transmittedBytes'] as int;
+            final acknowledgedBytes = mapevent['acknowledgedBytes'] as int;
+            final totalSize = mapevent['totalSize'] as int;
+            if (transmissionProgress != null) {
+              transmissionProgress!(
+                transmittedBytes,
+                acknowledgedBytes,
+                totalSize,
+                progress,
+                secondaryProgress,
+              );
+            }
+          }
+          break;
+        case "receptionProgress":
+          if (event is Map) {
+            final mapevent = Map<String, Object>.from(event);
+            final progress = mapevent['progress'] as int;
+            final secondaryProgress = mapevent['secondaryProgress'] as int;
+            final receivedBytes = mapevent['receivedBytes'] as int;
+            final acknowledgedBytes = mapevent['acknowledgedBytes'] as int;
+            final totalSize = mapevent['totalSize'] as int;
+            if (receptionProgress != null) {
+              receptionProgress!(
+                receivedBytes,
+                acknowledgedBytes,
+                totalSize,
+                progress,
+                secondaryProgress,
+              );
+            }
+          }
+        default:
+      }
+    });
+  }
+
+  @override
+  Future<void> dispose() async {
+    methodChannel.invokeMethod<bool>('closeNFC');
+    methodChannel.invokeMethod<bool>('FTMcancel');
+    botToastController.close();
+  }
+
+  @override
+  Future<bool> isAvailable() async {
+    final result = await methodChannel.invokeMethod<bool>('isAvailable');
+    return result ?? false;
+  }
+
+  @override
+  Future<bool> openNFC(NfcTagCallback onDiscovered) async {
+    nfcTagCallback = onDiscovered;
+    final result = await methodChannel.invokeMethod<bool>('openNFC');
+    return result ?? false;
+  }
+
+  @override
+  Future<bool> openFTM(NfcTagCallback onDiscovered) async {
+    nfcTagCallback = onDiscovered;
+    final result = await methodChannel.invokeMethod<bool>('openFTM');
+    return result ?? false;
+  }
+
+  @override
+  Future<bool> closeNFC() async {
+    final result = await methodChannel.invokeMethod<bool>('closeNFC');
+    return result ?? false;
+  }
+
+  @override
+  Future<bool> getFTM() async {
+    final result = await methodChannel.invokeMethod<bool>('getFTM');
+    return result ?? false;
+  }
+
+  @override
+  Future<List<int>> sendFTMData(
+    List<int> data, {
+    TransmissionProgress? tProgress,
+    ReceptionProgress? rProgress,
+  }) async {
+    transmissionProgress = tProgress;
+    receptionProgress = rProgress;
+    final result = await methodChannel.invokeMethod<List<int>>(
+      'sendFTMData',
+      {'data': data},
+    );
+    return result ?? List<int>.empty();
+  }
+
+  @override
+  Future<List<int>> readFTMData(
+    List<int> data, {
+    TransmissionProgress? tProgress,
+    ReceptionProgress? rProgress,
+  }) async {
+    transmissionProgress = tProgress;
+    receptionProgress = rProgress;
+    final result = await methodChannel.invokeMethod<List<int>>(
+      'readFTMData',
+      {'data': data},
+    );
+    return result ?? List<int>.empty();
+  }
+
+  @override
+  Future<NdefTag> readNdefTag() async {
+    final result = await methodChannel.invokeMethod<Map>('NDEF@read');
+    return NdefTag(
+      data: result?['data'] as String,
+      payload: result?['payload'] as List<int>,
+    );
+  }
+
+  @override
+  Stream<String> getBotToastStream() {
+    return botToastStream;
+  }
+
+  // @override
+  // Stream<Map> getDataStream() {
+  //   stream ??= eventChannel.receiveBroadcastStream().map((e) => e);
+  //   return stream!;
+  // }
+}
+
+NfcTag $GetNfcTag(Map<String, Object> map) {
+  String techListString = (map['type'] as String);
+  List<String> techList = techListString
+      .substring(1, techListString.length - 1) // 去除两边的方括号
+      .split(", ") // 按逗号分隔
+      .toList();
+  return NfcTag(
+    id: map['id'] as String,
+    type: techList,
+    memSize: map['memSize'] as int?,
+    tagNDEFLength: map['ndefLength'] as int?,
+  );
+}
