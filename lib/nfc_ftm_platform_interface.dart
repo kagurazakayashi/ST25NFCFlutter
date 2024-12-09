@@ -70,8 +70,12 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     throw UnimplementedError('readNdefTag() has not been implemented.');
   }
 
-  Stream<String> getBotToastStream() {
-    throw UnimplementedError('getBotToastStream() has not been implemented.');
+  Stream<String> getToastStream() {
+    throw UnimplementedError('getToastStream() has not been implemented.');
+  }
+
+  void closeToastStream() {
+    throw UnimplementedError('closeToastStream() has not been implemented.');
   }
 
   Future<void> dispose() {

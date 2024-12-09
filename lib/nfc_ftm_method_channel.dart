@@ -16,9 +16,9 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   final EventChannel eventChannel = const EventChannel('nfc_ftm_to_flutter');
 
   // Stream<Map>? stream;
-  static StreamController<String> botToastController =
+  static StreamController<String> toastController =
       StreamController<String>.broadcast();
-  static Stream<String> get botToastStream => botToastController.stream;
+  static Stream<String> get toastStream => toastController.stream;
 
   // static StreamController<String>
 
@@ -44,8 +44,8 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
             throw ArgumentError('Unexpected event format: $event');
           }
           break;
-        case "botToast":
-          botToastController.add(event['v'] as String);
+        case "toast":
+          toastController.add(event['v'] as String);
           break;
         case "transmissionProgress":
           if (event is Map) {
@@ -92,8 +92,7 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   @override
   Future<void> dispose() async {
     methodChannel.invokeMethod<bool>('closeNFC');
-    methodChannel.invokeMethod<bool>('FTMcancel');
-    botToastController.close();
+    toastController.close();
   }
 
   @override
@@ -189,15 +188,14 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
-  Stream<String> getBotToastStream() {
-    return botToastStream;
+  Stream<String> getToastStream() {
+    return toastStream;
   }
 
-  // @override
-  // Stream<Map> getDataStream() {
-  //   stream ??= eventChannel.receiveBroadcastStream().map((e) => e);
-  //   return stream!;
-  // }
+  @override
+  void closeToastStream() {
+    toastController.close();
+  }
 }
 
 NfcTag $GetNfcTag(Map<String, Object> map) {

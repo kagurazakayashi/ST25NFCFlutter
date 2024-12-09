@@ -97,13 +97,13 @@ class NfcFtm {
     return NfcFtmPlatform.instance.readNdefTag();
   }
 
-  Stream<String> getBotToastStream() {
-    return NfcFtmPlatform.instance.getBotToastStream();
+  Stream<String> getToastStream() {
+    return NfcFtmPlatform.instance.getToastStream();
   }
 
-  // Stream<Map> getDataStream() {
-  //   return NfcFtmPlatform.instance.getDataStream();
-  // }
+  void closeToastStream() {
+    return NfcFtmPlatform.instance.closeToastStream();
+  }
 
   Future<void> dispose() async {
     return NfcFtmPlatform.instance.dispose();

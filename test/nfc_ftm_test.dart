@@ -34,8 +34,12 @@ class MockNfcFtmPlatform
   Future<bool> getFTM() => Future.value(false);
 
   @override
-  Stream<String> getBotToastStream() {
+  Stream<String> getToastStream() {
     return Stream.fromIterable(['value']);
+  }
+  
+  @override
+  void closeToastStream() {
   }
 
   Stream<Map> getDataStream() {

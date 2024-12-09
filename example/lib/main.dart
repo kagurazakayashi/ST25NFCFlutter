@@ -44,7 +44,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> init() async {
-    _nfcFtmPlugin.getBotToastStream().listen((event) {
+    _nfcFtmPlugin.getToastStream().listen((event) {
       print("event = $event");
       if (event == "NO_FTM_MODE") {
         BotToast.showText(onlyOne: false, text: "当前NFC标签未开启FTM模式");
