@@ -155,7 +155,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   private int nfcState = 0;
 
   // 创建线程池
-  ExecutorService executorService = Executors.newSingleThreadExecutor();
+  ExecutorService executorService;
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -276,6 +276,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       Log.e(TAG, "initFTM: mFtmCommands == null");
       sendToastMessage("initFTM: mFtmCommands == null");
     }
+    executorService = Executors.newSingleThreadExecutor();
     nfcState = 4;
   }
 
@@ -287,8 +288,8 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     byte[] reData;
     try {
       reData = mFtmCommands.sendCmdAndWaitForCompletion(cmd, sendData,
-          true, true, pListener,
-          10000);
+              true, true, pListener,
+              10000);
     } catch (STException e) {
       String eStr = e.getMessage();
       if (eStr.equals("CMD_FAILED")) {
@@ -335,7 +336,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       Log.w(TAG, String.format(">>>>> send back Exception %s", e.getMessage()));
       sendToastMessage(String.format("future.get() Exception: %s", e.getMessage()));
     }
-    executorService.shutdown();
     result.success(responseData);
   }
 
@@ -691,10 +691,10 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     };
     // 配置 ReaderMode 参数
     int flags = NfcAdapter.FLAG_READER_NFC_A
-        | NfcAdapter.FLAG_READER_NFC_B
-        | NfcAdapter.FLAG_READER_NFC_F
-        | NfcAdapter.FLAG_READER_NFC_V
-        | NfcAdapter.FLAG_READER_NFC_BARCODE;
+            | NfcAdapter.FLAG_READER_NFC_B
+            | NfcAdapter.FLAG_READER_NFC_F
+            | NfcAdapter.FLAG_READER_NFC_V
+            | NfcAdapter.FLAG_READER_NFC_BARCODE;
     mnfcAdapter.enableReaderMode(activity, readerCallback, flags, null);
     nfcState = 1;
   }
@@ -706,6 +706,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       mFtmCommands.cancelCurrentTransfer();
     }
     nfcState = 0;
+    executorService.shutdown();
     if (mnfcAdapter != null) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
         mnfcAdapter.disableReaderMode(activity);
@@ -744,13 +745,11 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     Map<String, Object> ndefData = new HashMap<>();
     try {
       ndefData = future.get();
-      executorService.shutdown();
       if (ndefData != null) {
         result.success(ndefData);
       }
     } catch (Exception e) {
       e.printStackTrace();
-      executorService.shutdown();
       result.error("Err", "readNDEF err", e);
     }
   }
@@ -768,19 +767,19 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         data.put("k", "transmissionProgress");
         data.put("transmittedBytes", tORrBytes);
         Log.i(TAG, String.format(">>>T:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-            secondaryProgress));
+                secondaryProgress));
       } else {
         data.put("k", "receptionProgress");
         data.put("receivedBytes", tORrBytes);
         Log.i(TAG, String.format(">>>R:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-            secondaryProgress));
+                secondaryProgress));
       }
       data.put("acknowledgedBytes", acknowledgedBytes);
       data.put("totalSize", totalSize);
 
       // 使用 Handler 发送消息
       Message msg = progressHandle.obtainMessage(UPDATE_PROGRESS, progress,
-          secondaryProgress, data);
+              secondaryProgress, data);
       progressHandle.sendMessage(msg);
 
       // activity.runOnUiThread(new Runnable() {

@@ -104,7 +104,7 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
 
   @override
   Future<NfcState> getNfcState() async {
-    final result = await methodChannel.invokeMethod<int>('getState');
+    final result = await methodChannel.invokeMethod<int>('state');
     switch (result) {
       case -1:
         return NfcState.noAvailable;
