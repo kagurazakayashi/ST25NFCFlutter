@@ -103,6 +103,27 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
+  Future<NfcState> getNfcState() async {
+    final result = await methodChannel.invokeMethod<int>('getState');
+    switch (result) {
+      case -1:
+        return NfcState.noAvailable;
+      case 0:
+        return NfcState.disabled;
+      case 1:
+        return NfcState.enabled;
+      case 2:
+        return NfcState.readTag;
+      case 3:
+        return NfcState.modeFTMnoCommand;
+      case 4:
+        return NfcState.modeFTM;
+      default:
+        return NfcState.noAvailable;
+    }
+  }
+
+  @override
   Future<bool> openNFC(NfcTagCallback onDiscovered) async {
     nfcTagCallback = onDiscovered;
     final result = await methodChannel.invokeMethod<bool>('openNFC');

@@ -30,6 +30,10 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     throw UnimplementedError('isAvailable() has not been implemented.');
   }
 
+  Future<NfcState> getNfcState() {
+    throw UnimplementedError('getNfcState() has not been implemented.');
+  }
+
   Future<bool> openNFC(NfcTagCallback onDiscovered) {
     throw UnimplementedError('openNFC() has not been implemented.');
   }

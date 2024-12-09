@@ -7,6 +7,10 @@ class NfcFtm {
     return NfcFtmPlatform.instance.isAvailable();
   }
 
+  Future<NfcState> getNfcState() {
+    return NfcFtmPlatform.instance.getNfcState();
+  }
+
   Future<bool> openNFC(NfcTagCallback onDiscovered) {
     return NfcFtmPlatform.instance.openNFC(onDiscovered);
   }

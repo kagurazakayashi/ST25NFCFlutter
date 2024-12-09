@@ -19,6 +19,9 @@ class MockNfcFtmPlatform
   Future<bool> isAvailable() => Future.value(false);
 
   @override
+  Future<NfcState> getNfcState() => Future.value(NfcState.noAvailable);
+
+  @override
   Future<bool> openNFC(NfcTagCallback onDiscovered) => Future.value(false);
 
   @override

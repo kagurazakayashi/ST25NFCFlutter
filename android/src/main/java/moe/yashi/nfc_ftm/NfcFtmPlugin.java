@@ -145,6 +145,15 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   public static final byte FTM_CMD_READ_DATA = 6;
   private static final int UPDATE_PROGRESS = 1;
 
+  // NFC 状态
+  // -1: 未找到 NFC
+  // 0: 未开启 NFC
+  // 1: NFC 已开启
+  // 2: 读取到 NFC 标签
+  // 3: NFC 已开启，FTM 模式，未初始化 mFtmCommands
+  // 4: NFC 已开启，FTM 模式
+  private int nfcState = 0;
+
   // 创建线程池
   ExecutorService executorService = Executors.newSingleThreadExecutor();
 
@@ -170,7 +179,13 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         boolean isEnabledNFC = isNfcSupported(context);
         Log.w(TAG, String.format(">>>>> isEnabledNFC %s", isEnabledNFC));
         sendToastMessage(String.format("isEnabledNFC: %s", isEnabledNFC));
+        if (!isEnabledNFC) {
+          nfcState = -1;
+        }
         result.success(isEnabledNFC);
+        break;
+      case "state":
+        result.success(nfcState);
         break;
       case "openNFC":
         isFTMmode = false;
@@ -252,13 +267,16 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       mFtmCommands = new FtmCommands(mST25DVTag);
       mFtmCommands.setMinTimeInMsBetweenConsecutiveCmds(80);
     } catch (Exception e) {
+      nfcState = 3;
       Log.e(TAG, "FtmCommands init Err:" + e.getMessage());
     }
 
     if (mFtmCommands == null) {
+      nfcState = 3;
       Log.e(TAG, "initFTM: mFtmCommands == null");
       sendToastMessage("initFTM: mFtmCommands == null");
     }
+    nfcState = 4;
   }
 
   public byte[] FTMrwData(byte cmd, byte[] sendData) throws Exception {
@@ -443,6 +461,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     readerCallback = new NfcAdapter.ReaderCallback() {
       @Override
       public void onTagDiscovered(Tag tag) {
+        nfcState = 2;
         // 当检测到 NFC 标签时触发
         byte[] uid = tag.getId();
         String androidTagIdHex = bytesToHex(uid);
@@ -677,6 +696,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         | NfcAdapter.FLAG_READER_NFC_V
         | NfcAdapter.FLAG_READER_NFC_BARCODE;
     mnfcAdapter.enableReaderMode(activity, readerCallback, flags, null);
+    nfcState = 1;
   }
 
   // 关闭 NFC 扫描 关闭 FTM 通道
@@ -685,6 +705,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     if (mFtmCommands != null) {
       mFtmCommands.cancelCurrentTransfer();
     }
+    nfcState = 0;
     if (mnfcAdapter != null) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
         mnfcAdapter.disableReaderMode(activity);

@@ -18,6 +18,15 @@ typedef ReceptionProgress = Future<void> Function(
   int secondaryProgress,
 );
 
+enum NfcState {
+  noAvailable, // 未找到 NFC
+  disabled, // NFC 关闭
+  enabled, // NFC 打开
+  readTag, // 读取到标签
+  modeFTMnoCommand, // FTM 模式，为初始化FtmCommands
+  modeFTM, // FTM 模式
+}
+
 class NfcTag {
   const NfcTag({
     required this.id,
