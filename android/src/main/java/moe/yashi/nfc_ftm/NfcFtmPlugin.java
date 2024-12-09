@@ -706,7 +706,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       mFtmCommands.cancelCurrentTransfer();
     }
     nfcState = 0;
-    executorService.shutdown();
+    if (executorService != null) {
+      executorService.shutdown();
+    }
     if (mnfcAdapter != null) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
         mnfcAdapter.disableReaderMode(activity);
