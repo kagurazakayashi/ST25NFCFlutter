@@ -94,6 +94,7 @@ import com.st.st25sdk.TagHelper;
 
 import com.st.st25sdk.ndef.NDEFMsg;
 import com.st.st25sdk.ndef.NDEFRecord;
+import com.st.st25sdk.ndef.TextRecord;
 
 import static com.st.st25sdk.TagHelper.ProductID.PRODUCT_UNKNOWN;
 import static com.st.st25sdk.TagHelper.identifyIso14443BProduct;
@@ -232,7 +233,20 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         mFtmCommands.cancelCurrentTransfer();
         break;
       case "NDEF@read":
+        if (executorService == null) {
+          executorService = Executors.newSingleThreadExecutor();
+        }
         readNdef(result);
+        break;
+      case "NDEF@write":
+        if (executorService == null) {
+          executorService = Executors.newSingleThreadExecutor();
+        }
+
+        // ArrayList<Integer> ndefWDataList = (ArrayList<Integer>) call.argument("data");
+        // byte[] ndefWData = new byte[ndefWDataList.size()];
+        String ndefWData = call.argument("data");
+        writeNdef(result, ndefWData);
         break;
 
       default:
@@ -288,8 +302,8 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     byte[] reData;
     try {
       reData = mFtmCommands.sendCmdAndWaitForCompletion(cmd, sendData,
-              true, true, pListener,
-              10000);
+          true, true, pListener,
+          10000);
     } catch (STException e) {
       String eStr = e.getMessage();
       if (eStr.equals("CMD_FAILED")) {
@@ -691,10 +705,10 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     };
     // 配置 ReaderMode 参数
     int flags = NfcAdapter.FLAG_READER_NFC_A
-            | NfcAdapter.FLAG_READER_NFC_B
-            | NfcAdapter.FLAG_READER_NFC_F
-            | NfcAdapter.FLAG_READER_NFC_V
-            | NfcAdapter.FLAG_READER_NFC_BARCODE;
+        | NfcAdapter.FLAG_READER_NFC_B
+        | NfcAdapter.FLAG_READER_NFC_F
+        | NfcAdapter.FLAG_READER_NFC_V
+        | NfcAdapter.FLAG_READER_NFC_BARCODE;
     mnfcAdapter.enableReaderMode(activity, readerCallback, flags, null);
     nfcState = 1;
   }
@@ -708,6 +722,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     nfcState = 0;
     if (executorService != null) {
       executorService.shutdown();
+      executorService = null;
     }
     if (mnfcAdapter != null) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
@@ -756,6 +771,42 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     }
   }
 
+  // 从 ST25DVTag 对象中获取NDEF格式的信息
+  private void writeNdef(@NonNull Result result, String data) {
+    if (mST25DVTag == null) {
+      return;
+    }
+    // 提交任务并返回 Future 对象
+    Future<Boolean> future = executorService.submit(new Callable<Boolean>() {
+      @Override
+      public Boolean call() throws Exception {
+        try {
+          NDEFMsg ndefmsg = new NDEFMsg();
+
+          TextRecord ndefRecord = new TextRecord(data);
+          // NDEFRecord ndefRecord = new NDEFRecord(data);
+          ndefmsg.addRecord(ndefRecord);
+
+          mST25DVTag.writeNdefMessage(ndefmsg);
+        } catch (STException e) {
+          sendToastMessage("write NDEF message STException: " + e.getMessage());
+          return false;
+        } catch (Exception e) {
+          sendToastMessage("write NDEF message Exception: " + e.getMessage());
+          return false;
+        }
+        return true;
+      }
+    });
+    try {
+      Boolean done = future.get();
+      result.success(done);
+    } catch (Exception e) {
+      e.printStackTrace();
+      result.success(false);
+    }
+  }
+
   // 把自动数据转发给 Flutter
   public void sendProgressData(boolean isTransmitted, int tORrBytes, int acknowledgedBytes, int totalSize) {
     int progress = (acknowledgedBytes * 100) / totalSize;
@@ -769,19 +820,19 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         data.put("k", "transmissionProgress");
         data.put("transmittedBytes", tORrBytes);
         Log.i(TAG, String.format(">>>T:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-                secondaryProgress));
+            secondaryProgress));
       } else {
         data.put("k", "receptionProgress");
         data.put("receivedBytes", tORrBytes);
         Log.i(TAG, String.format(">>>R:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-                secondaryProgress));
+            secondaryProgress));
       }
       data.put("acknowledgedBytes", acknowledgedBytes);
       data.put("totalSize", totalSize);
 
       // 使用 Handler 发送消息
       Message msg = progressHandle.obtainMessage(UPDATE_PROGRESS, progress,
-              secondaryProgress, data);
+          secondaryProgress, data);
       progressHandle.sendMessage(msg);
 
       // activity.runOnUiThread(new Runnable() {

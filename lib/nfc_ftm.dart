@@ -97,6 +97,10 @@ class NfcFtm {
     return NfcFtmPlatform.instance.readNdefTag();
   }
 
+  Future<bool> writeNdefTag(String data){
+    return NfcFtmPlatform.instance.writeNdefTag(data);
+  }
+
   Stream<String> getToastStream() {
     return NfcFtmPlatform.instance.getToastStream();
   }

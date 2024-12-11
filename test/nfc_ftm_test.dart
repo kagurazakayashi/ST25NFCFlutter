@@ -71,6 +71,11 @@ class MockNfcFtmPlatform
       {TransmissionProgress? tProgress, ReceptionProgress? rProgress}) {
     throw UnimplementedError();
   }
+  
+  @override
+  Future<bool> writeNdefTag(String data) {
+    throw UnimplementedError();
+  }
 }
 
 void main() {

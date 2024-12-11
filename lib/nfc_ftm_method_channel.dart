@@ -188,6 +188,15 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
+  Future<bool> writeNdefTag(String data) async {
+    final result = await methodChannel.invokeMethod<bool>(
+      'NDEF@write',
+      {'data': data},
+    );
+    return result ?? false;
+  }
+
+  @override
   Stream<String> getToastStream() {
     return toastStream;
   }

@@ -26,6 +26,7 @@ class _MyAppState extends State<MyApp> {
 
   bool isAvailable = false;
 
+  bool isInitFTM = false;
   bool isInitNFC = false;
 
   String sendFTMDataResult = "";
@@ -115,10 +116,14 @@ class _MyAppState extends State<MyApp> {
                 setState(() {});
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.nfc),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(8),
+          children: [
+            TextButton(
               onPressed: () async {
-                isInitNFC = await _nfcFtmPlugin.openFTM((NfcTag tag) async {
+                isInitFTM = await _nfcFtmPlugin.openFTM((NfcTag tag) async {
                   print(">> openFTM: $tag");
                   String nfcStr = jsonEncode(tag);
                   print(">> nfcStr: $nfcStr");
@@ -128,16 +133,12 @@ class _MyAppState extends State<MyApp> {
                 });
                 setState(() {});
               },
-            )
-          ],
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(8),
-          children: [
+              child: const Text("Open FTM"),
+            ),
             Text(nfcDataStr),
             TextButton(
               onPressed: () async {
-                isInitNFC = await _nfcFtmPlugin.getFTM();
+                isInitFTM = await _nfcFtmPlugin.getFTM();
               },
               child: const Text("Get FTM"),
             ),
@@ -148,45 +149,102 @@ class _MyAppState extends State<MyApp> {
               value: secProgress,
             ),
             TextButton(
-              onPressed: () async {
-                setState(() {
-                  totalProgress = 0.0;
-                  secProgress = 0.0;
-                });
-                String data = "{\"Rd\":[[-1,-65533],[1,3],5]}";
-                List<int> resultByte = await _nfcFtmPlugin
-                    .sendFTMData(utf8.encode(data), receptionProgress: (
-                  transmittedBytes,
-                  acknowledgedBytes,
-                  totalSize,
-                  progress,
-                  secondaryProgress,
-                ) {
-                  setState(() {
-                    totalProgress = progress / 100;
-                    secProgress = secondaryProgress / 100;
-                  });
-                  print(">>>RRR: $progress % | $secondaryProgress %");
-                  return Future.value();
-                });
-                sendFTMDataResult = utf8.decode(resultByte);
-                print(">>@@>> byte: $sendFTMDataResult");
-                setState(() {});
-              },
+              onPressed: !isInitFTM
+                  ? null
+                  : () async {
+                      setState(() {
+                        totalProgress = 0.0;
+                        secProgress = 0.0;
+                      });
+                      String data = "{\"Rd\":[[-1,-65533],[1,3],5]}";
+                      print(">> payload: ${utf8.encode(data)}");
+                      List<int> resultByte = await _nfcFtmPlugin
+                          .sendFTMData(utf8.encode(data), receptionProgress: (
+                        transmittedBytes,
+                        acknowledgedBytes,
+                        totalSize,
+                        progress,
+                        secondaryProgress,
+                      ) {
+                        setState(() {
+                          totalProgress = progress / 100;
+                          secProgress = secondaryProgress / 100;
+                        });
+                        print(">>>RRR: $progress % | $secondaryProgress %");
+                        return Future.value();
+                      });
+                      sendFTMDataResult = utf8.decode(resultByte);
+                      print(">>@@>> byte: $sendFTMDataResult");
+                      setState(() {});
+                    },
               child: const Text("Send FTM DATA"),
             ),
+            Text("FTM Result: $sendFTMDataResult"),
             TextButton(
               onPressed: () async {
-                _nfcFtmPlugin.readNdefTag().then((value) {
-                  print(">> readNdefTag: ${value.payload} => ${value.data}");
-                  sendNDEFDataResult = value.data;
-                  ;
-                  setState(() {});
+                await _nfcFtmPlugin.closeNFC();
+                isInitNFC = await _nfcFtmPlugin.openNFC((NfcTag tag) async {
+                  print(">> openNFC: $tag");
+                  String nfcStr = jsonEncode(tag);
+                  print(">> nfcStr: $nfcStr");
+                  // _nfcFtmPlugin.readNdefTag().then((value) {
+                  //   print(">> readNdefTag: $value");
+                  // });
                 });
+                setState(() {});
               },
+              child: const Text("Open NFC NDEF"),
+            ),
+            TextButton(
+              onPressed: !isInitNFC
+                  ? null
+                  : () async {
+                      _nfcFtmPlugin.readNdefTag().then((value) {
+                        List<int> header = value.payload.sublist(0, 1);
+                        List<int> lang = value.payload.sublist(1, 3);
+                        List<int> text = value.payload.sublist(3);
+
+                        print(
+                            ">> readNdefTag: ${value.payload} => ${value.data}");
+                        print('>>> header: $header ${utf8.decode(header)}');
+                        print('>>> language: $lang ${utf8.decode(lang)}');
+                        print('>>> value: ${utf8.decode(text)}');
+                        sendNDEFDataResult = value.data;
+                        setState(() {});
+                      });
+                    },
               child: const Text("Read NDEF"),
             ),
-            Text("FTM Result: $sendFTMDataResult"),
+            TextButton(
+              onPressed: !isInitNFC
+                  ? null
+                  : () async {
+// byte[] textBytes = text.getBytes(Charset.forName("UTF-8"));
+// byte[] languageBytes = "en".getBytes(Charset.forName("US-ASCII"));
+                      // List<int> payload = [];
+                      String text = "[NDEF]测试 NFC 写入!@#dasf";
+                      List<int> payload = utf8.encode(text);
+
+                      // payload.addAll([2]);
+                      // payload.addAll(utf8.encode("zh"));
+                      // payload.addAll(utf8.encode(text));
+                      print(
+                          ">> payload: ${payload.length} ${payload.length + 7} $payload");
+                      bool done = await _nfcFtmPlugin.writeNdefTag(text);
+                      if (done) {
+                        BotToast.showText(
+                          onlyOne: false,
+                          text: "写入成功",
+                        );
+                      } else {
+                        BotToast.showText(
+                          onlyOne: false,
+                          text: "写入失败",
+                        );
+                      }
+                    },
+              child: const Text("Write NDEF"),
+            ),
             Text("NDEF Result: $sendNDEFDataResult"),
             Text(platformVersion.toString()),
             Text("NFC: $isAvailable"),
