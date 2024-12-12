@@ -748,13 +748,16 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         try {
           NDEFMsg ndefmsg = mST25DVTag.readNdefMessage();
           for (NDEFRecord record : ndefmsg.getNDEFRecords()) {
-            if (record.getPayload().length<3) {
+            if (record.getPayload().length<=3) {
               continue;
             }
             byte[] langByte = new byte[2];
+            int leng = record.getPayload().length-3;
+            byte[] value = new byte[leng];
             System.arraycopy(record.getPayload(), 1, langByte, 0, 2);
-            String payload = new String(record.getPayload(), StandardCharsets.UTF_8);
+            System.arraycopy(record.getPayload(), 3, value, 0, leng);
             String lang = new String(langByte, StandardCharsets.UTF_8);
+            String payload = new String(value, StandardCharsets.UTF_8);
             ndefData.put("lang", lang);
             ndefData.put("data", payload);
             ndefData.put("payload", record.getPayload());
