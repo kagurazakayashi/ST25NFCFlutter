@@ -105,6 +105,10 @@ class NfcFtm {
     return NfcFtmPlatform.instance.getToastStream();
   }
 
+  void reopenToastStream() {
+    return NfcFtmPlatform.instance.reopenToastStream();
+  }
+
   void closeToastStream() {
     return NfcFtmPlatform.instance.closeToastStream();
   }

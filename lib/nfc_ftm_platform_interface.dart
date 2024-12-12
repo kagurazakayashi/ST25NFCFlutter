@@ -78,6 +78,10 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     throw UnimplementedError('getToastStream() has not been implemented.');
   }
 
+  void reopenToastStream(){
+    throw UnimplementedError('reopenToastStream() has not been implemented.');
+  }
+
   void closeToastStream() {
     throw UnimplementedError('closeToastStream() has not been implemented.');
   }

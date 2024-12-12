@@ -203,10 +203,14 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
 
   @override
   Stream<String> getToastStream() {
-    if(toastController.isClosed){
+    return toastStream;
+  }
+
+  @override
+  void reopenToastStream() {
+    if (toastController.isClosed) {
       initToastStream();
     }
-    return toastStream;
   }
 
   @override

@@ -37,20 +37,14 @@ class MockNfcFtmPlatform
   Stream<String> getToastStream() {
     return Stream.fromIterable(['value']);
   }
-  
+
   @override
-  void closeToastStream() {
+  void reopenToastStream() {
+    throw UnimplementedError();
   }
 
-  Stream<Map> getDataStream() {
-    return Stream.fromIterable([
-      {'key': 'value'}
-    ]);
-  }
-
-  Stream<String> getStringStream() {
-    return Stream.fromIterable(['value']);
-  }
+  @override
+  void closeToastStream() {}
 
   @override
   NfcTagCallback? onDiscovered;
@@ -71,7 +65,7 @@ class MockNfcFtmPlatform
       {TransmissionProgress? tProgress, ReceptionProgress? rProgress}) {
     throw UnimplementedError();
   }
-  
+
   @override
   Future<bool> writeNdefTag(String data) {
     throw UnimplementedError();
