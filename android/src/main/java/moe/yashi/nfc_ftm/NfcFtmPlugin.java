@@ -355,7 +355,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
   public void sendToastMessage(String message) {
     Map<String, String> messageMap = new HashMap();
-    messageMap.put("k", "botToast");
+    messageMap.put("k", "toast");
     messageMap.put("v", message);
     activity.runOnUiThread(new Runnable() {
       @Override
