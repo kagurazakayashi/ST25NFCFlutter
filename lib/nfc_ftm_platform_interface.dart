@@ -66,7 +66,7 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     throw UnimplementedError('readFTMData() has not been implemented.');
   }
 
-  Future<NdefTag> readNdefTag() {
+  Future<NdefTag?> readNdefTag() {
     throw UnimplementedError('readNdefTag() has not been implemented.');
   }
 

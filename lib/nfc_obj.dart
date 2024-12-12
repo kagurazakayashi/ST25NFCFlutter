@@ -68,15 +68,18 @@ class NfcTag {
 
 class NdefTag {
   const NdefTag({
+    required this.language,
     required this.data,
     required this.payload,
   });
 
+  final String language;
   final String data;
   final List<int> payload;
 
   Map<String, Object?> toJson() {
     return {
+      'language': language,
       'data': data,
       'payload': payload,
     };
@@ -84,6 +87,7 @@ class NdefTag {
 
   factory NdefTag.fromMap(Map<String, Object?> map) {
     return NdefTag(
+      language: map['language'] as String,
       data: map['data'] as String,
       payload: map['payload'] as List<int>,
     );
@@ -91,6 +95,6 @@ class NdefTag {
 
   @override
   String toString() {
-    return '{data: $data, payload: $payload}';
+    return '{language: $language, data: $data, payload: $payload}';
   }
 }

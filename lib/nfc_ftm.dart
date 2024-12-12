@@ -93,7 +93,7 @@ class NfcFtm {
     );
   }
 
-  Future<NdefTag> readNdefTag() {
+  Future<NdefTag?> readNdefTag() {
     return NfcFtmPlatform.instance.readNdefTag();
   }
 

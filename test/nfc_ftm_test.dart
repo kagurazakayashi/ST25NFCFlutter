@@ -8,8 +8,9 @@ class MockNfcFtmPlatform
     with MockPlatformInterfaceMixin
     implements NfcFtmPlatform {
   @override
-  Future<NdefTag> readNdefTag() => Future.value(
+  Future<NdefTag?> readNdefTag() => Future.value(
         const NdefTag(
+          language: "",
           data: "",
           payload: [],
         ),

@@ -180,11 +180,27 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
-  Future<NdefTag> readNdefTag() async {
+  Future<NdefTag?> readNdefTag() async {
     final result = await methodChannel.invokeMethod<Map>('NDEF@read');
+    if (result == null) {
+      return null;
+    }
+    String lang = "";
+    String data = "";
+    List<int> payload = [];
+    if (result.containsKey('lang')) {
+      lang = result['lang'] as String;
+    }
+    if (result.containsKey('data')) {
+      data = result['data'] as String;
+    }
+    if (result.containsKey('payload')) {
+      payload = result['payload'] as List<int>;
+    }
     return NdefTag(
-      data: result?['data'] as String,
-      payload: result?['payload'] as List<int>,
+      language: lang,
+      data: data,
+      payload: payload,
     );
   }
 

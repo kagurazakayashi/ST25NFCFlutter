@@ -243,7 +243,8 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           executorService = Executors.newSingleThreadExecutor();
         }
 
-        // ArrayList<Integer> ndefWDataList = (ArrayList<Integer>) call.argument("data");
+        // ArrayList<Integer> ndefWDataList = (ArrayList<Integer>)
+        // call.argument("data");
         // byte[] ndefWData = new byte[ndefWDataList.size()];
         String ndefWData = call.argument("data");
         writeNdef(result, ndefWData);
@@ -747,7 +748,14 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         try {
           NDEFMsg ndefmsg = mST25DVTag.readNdefMessage();
           for (NDEFRecord record : ndefmsg.getNDEFRecords()) {
+            if (record.getPayload().length<3) {
+              continue;
+            }
+            byte[] langByte = new byte[2];
+            System.arraycopy(record.getPayload(), 1, langByte, 0, 2);
             String payload = new String(record.getPayload(), StandardCharsets.UTF_8);
+            String lang = new String(langByte, StandardCharsets.UTF_8);
+            ndefData.put("lang", lang);
             ndefData.put("data", payload);
             ndefData.put("payload", record.getPayload());
           }

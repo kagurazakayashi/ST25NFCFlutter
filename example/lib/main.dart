@@ -50,6 +50,10 @@ class _MyAppState extends State<MyApp> {
       if (event == "NO_FTM_MODE") {
         BotToast.showText(onlyOne: false, text: "当前NFC标签未开启FTM模式");
         _nfcFtmPlugin.readNdefTag().then((value) {
+          if (value == null) {
+            BotToast.showText(onlyOne: false, text: "读取失败");
+            return;
+          }
           print(">> readNdefTag: ${value.payload} => ${value.data}");
           sendNDEFDataResult = value.data;
           ;
@@ -200,6 +204,14 @@ class _MyAppState extends State<MyApp> {
                   ? null
                   : () async {
                       _nfcFtmPlugin.readNdefTag().then((value) {
+                        if (value == null) {
+                          BotToast.showText(
+                            onlyOne: false,
+                            text: "读取失败",
+                          );
+                          return;
+                        }
+                        print(">>> $value");
                         List<int> header = value.payload.sublist(0, 1);
                         List<int> lang = value.payload.sublist(1, 3);
                         List<int> text = value.payload.sublist(3);
