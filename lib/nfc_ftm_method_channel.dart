@@ -45,6 +45,7 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
           }
           break;
         case "toast":
+          reopenToastStream();
           toastController.add(event['v'] as String);
           break;
         case "transmissionProgress":
@@ -203,6 +204,7 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
 
   @override
   Stream<String> getToastStream() {
+    reopenToastStream();
     return toastStream;
   }
 
