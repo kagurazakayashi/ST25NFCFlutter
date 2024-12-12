@@ -16,9 +16,8 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   final EventChannel eventChannel = const EventChannel('nfc_ftm_to_flutter');
 
   // Stream<Map>? stream;
-  static StreamController<String> toastController =
-      StreamController<String>.broadcast();
-  static Stream<String> get toastStream => toastController.stream;
+  late StreamController<String> toastController;
+  late Stream<String> toastStream;
 
   // static StreamController<String>
 
@@ -27,6 +26,7 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   ReceptionProgress? receptionProgress;
 
   MethodChannelNfcFtm() {
+    initToastStream();
     eventChannel.receiveBroadcastStream().listen((event) {
       print('>>>event: $event');
       if (event.runtimeType.toString() != "_Map<Object?, Object?>") {
@@ -196,8 +196,16 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
     return result ?? false;
   }
 
+  void initToastStream() {
+    toastController = StreamController<String>.broadcast();
+    toastStream = toastController.stream.asBroadcastStream();
+  }
+
   @override
   Stream<String> getToastStream() {
+    if(toastController.isClosed){
+      initToastStream();
+    }
     return toastStream;
   }
 
