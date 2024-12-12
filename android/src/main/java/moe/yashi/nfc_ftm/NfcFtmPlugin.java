@@ -344,7 +344,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       responseData = future.get();
       if (responseData == null) {
         Log.w(TAG, ">>>>> send back is null");
-        sendToastMessage("Response data is null");
       }
     } catch (Exception e) {
       e.printStackTrace();
