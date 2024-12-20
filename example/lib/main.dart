@@ -56,7 +56,6 @@ class _MyAppState extends State<MyApp> {
           }
           print(">> readNdefTag: ${value.payload} => ${value.data}");
           sendNDEFDataResult = value.data;
-          ;
           setState(() {});
         });
       } else {
@@ -162,6 +161,7 @@ class _MyAppState extends State<MyApp> {
                       });
                       String data = "{\"Rd\":[[-1,-65533],[1,3],5]}";
                       print(">> payload: ${utf8.encode(data)}");
+                      
                       List<int> resultByte = await _nfcFtmPlugin
                           .sendFTMData(utf8.encode(data), receptionProgress: (
                         transmittedBytes,

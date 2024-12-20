@@ -34,9 +34,6 @@ import android.content.Intent;
 import android.nfc.NfcManager;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
-import android.nfc.tech.IsoDep;
-import android.nfc.tech.MifareClassic;
-import android.nfc.tech.NfcA;
 
 import com.st.st25android.AndroidReaderInterface;
 import com.st.st25sdk.Helper;
@@ -103,13 +100,7 @@ import static com.st.st25sdk.TagHelper.identifyType4Product;
 import static com.st.st25sdk.TagHelper.identifyTypeVProduct;
 
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.Message;
-import androidx.lifecycle.LiveData;
-import androidx.lifecycle.MutableLiveData;
-import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.LifecycleOwner;
 
 import android.util.Log;
 
@@ -118,8 +109,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   // 接收来自 Flutter 的通知，可以回复该通知
   private MethodChannel methodChannel;
   private EventChannel.EventSink eventChannelSink = null;
-  private Handler progressHandle; // 子线程与主线程交互
-  private ProgressViewModel progressViewModel;
 
   private Activity activity; // 用于存储当前的 Activity
   private Context context; // 用于存储 ApplicationContext
@@ -146,6 +135,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   public static final byte FTM_CMD_READ_DATA = 6;
   private static final int UPDATE_PROGRESS = 1;
 
+  boolean isTDone = false;
+  boolean isRDone = false;
+
   // NFC 状态
   // -1: 未找到 NFC
   // 0: 未开启 NFC
@@ -160,7 +152,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
-    Log.w(TAG, String.format(">>>>> onAttachedToEngine %s", "test"));
     context = flutterPluginBinding.getApplicationContext();
 
     methodChannel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "nfc_ftm_to_native");
@@ -178,7 +169,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     switch (method) {
       case "isAvailable":
         boolean isEnabledNFC = isNfcSupported(context);
-        Log.w(TAG, String.format(">>>>> isEnabledNFC %s", isEnabledNFC));
         sendToastMessage(String.format("isEnabledNFC: %s", isEnabledNFC));
         if (!isEnabledNFC) {
           nfcState = -1;
@@ -219,10 +209,14 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         result.success(true);
         break;
       case "sendFTMData":
+        isTDone = false;
+        isRDone = false;
         byte[] sendData = (byte[]) call.argument("data");
         handleFTMOperation(result, FTM_CMD_SEND_DATA, sendData);
         break;
       case "readFTMData":
+        isTDone = false;
+        isRDone = false;
         byte[] rsendData = (byte[]) call.argument("data");
         handleFTMOperation(result, FTM_CMD_READ_DATA, rsendData);
         break;
@@ -243,9 +237,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           executorService = Executors.newSingleThreadExecutor();
         }
 
-        // ArrayList<Integer> ndefWDataList = (ArrayList<Integer>)
-        // call.argument("data");
-        // byte[] ndefWData = new byte[ndefWDataList.size()];
         String ndefWData = call.argument("data");
         writeNdef(result, ndefWData);
         break;
@@ -280,16 +271,14 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     }
     try {
       mFtmCommands = new FtmCommands(mST25DVTag);
-      mFtmCommands.setMinTimeInMsBetweenConsecutiveCmds(80);
+      mFtmCommands.setMinTimeInMsBetweenSendCmds(80);
     } catch (Exception e) {
       nfcState = 3;
-      Log.e(TAG, "FtmCommands init Err:" + e.getMessage());
     }
 
     if (mFtmCommands == null) {
       nfcState = 3;
-      Log.e(TAG, "initFTM: mFtmCommands == null");
-      sendToastMessage("initFTM: mFtmCommands == null");
+      sendToastMessage("initFTM: mFtmCommands is null");
     }
     executorService = Executors.newSingleThreadExecutor();
     nfcState = 4;
@@ -297,8 +286,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
   public byte[] FTMrwData(byte cmd, byte[] sendData) throws Exception {
     if (mFtmCommands == null) {
-      Log.e(TAG, "sendFTMData: mFtmCommands == null");
-      throw new Exception("Send FTM data error: mFtmCommands == null");
+      throw new Exception("Send FTM data error: mFtmCommands is null");
     }
     byte[] reData;
     try {
@@ -325,32 +313,26 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
   // 创建一个线程池，用于执行FTM发送数据任务
   private void handleFTMOperation(MethodChannel.Result result, byte cmd, byte[] data) {
-    Future<byte[]> future = executorService.submit(new Callable<byte[]>() {
+    executorService.submit(new Callable() {
       @Override
-      public byte[] call() throws Exception {
+      public Object call() throws Exception {
+        byte[] responseData = new byte[0];
         try {
-          return FTMrwData(cmd, data);
+          responseData = FTMrwData(cmd, data);
         } catch (Exception e) {
           e.printStackTrace();
-          Log.w(TAG, String.format(">>>>> sendFTMData Exception %s", e.getMessage()));
           sendToastMessage(e.getMessage());
-          return null;
         }
+        byte[] finalResponseData = responseData;
+        activity.runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            result.success(finalResponseData);
+          }
+        });
+        return null;
       }
     });
-
-    byte[] responseData = new byte[0];
-    try {
-      responseData = future.get();
-      if (responseData == null) {
-        Log.w(TAG, ">>>>> send back is null");
-      }
-    } catch (Exception e) {
-      e.printStackTrace();
-      Log.w(TAG, String.format(">>>>> send back Exception %s", e.getMessage()));
-      sendToastMessage(String.format("future.get() Exception: %s", e.getMessage()));
-    }
-    result.success(responseData);
   }
 
   public void sendToastMessage(String message) {
@@ -374,14 +356,12 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   @Override
   public void onDetachedFromActivity() {
     // 完全解绑 Activity
-    Log.w(TAG, ">>>>> onDetachedFromActivity");
     activity = null; // 清理 Activity 引用
   }
 
   @Override
   public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding activityPluginBinding) {
     // 配置恢复时重新绑定 Activity
-    Log.w(TAG, ">>>>> onReattachedToActivityForConfigChanges");
     activity = activityPluginBinding.getActivity(); // 恢复 Activity 引用
     // getTag();
   }
@@ -389,52 +369,19 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   @Override
   public void onDetachedFromActivityForConfigChanges() {
     // 配置更改时解绑 Activity
-    Log.w(TAG, ">>>>> onDetachedFromActivityForConfigChanges");
     activity = null; // 清理 Activity 引用
   }
 
   @Override
   public void onAttachedToActivity(@NonNull ActivityPluginBinding activityPluginBinding) {
     // 绑定 Activity 的逻辑
-    Log.w(TAG, ">>>>> onAttachedToActivity");
     activity = activityPluginBinding.getActivity(); // 获取当前的 Activity
-    // getTag();
-
-    if (activity instanceof LifecycleOwner) {
-      LifecycleOwner lifecycleOwner = (LifecycleOwner) activity;
-      progressViewModel.getProgress().observe(lifecycleOwner, data -> {
-        // 更新 UI 或其他操作
-        Log.i(TAG, ">>>R4");
-      });
-    } else {
-      Log.i(TAG, "Activity must implement LifecycleOwner");
-      throw new IllegalArgumentException("Activity must implement LifecycleOwner");
-    }
   }
 
   @Override
   // eventChannelSink
   public void onListen(Object arguments, EventChannel.EventSink events) {
     eventChannelSink = events;
-    progressHandle = new Handler(Looper.getMainLooper()) {
-      @Override
-      public void handleMessage(Message msg) {
-
-        Log.i(TAG, String.format(">>>RRRR %d %d %d", msg.what, msg.arg1, msg.arg2));
-        if (msg.what == UPDATE_PROGRESS) {
-          eventChannelSink.success(msg.obj);
-
-        }
-      }
-
-    };
-
-    // LifecycleOwner lifecycleOwner = (LifecycleOwner) activity; // 强制转换为
-    // LifecycleOwner
-    // progressViewModel.getProgress().observe(lifecycleOwner, data -> {
-    // // 更新 UI 或其他操作
-    // Log.i(TAG, ">>>R4");
-    // });
 
     pListener = new ProgressListener(this);
   }
@@ -684,9 +631,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           ndefLen = ndefmsg.getLength();
 
         } catch (STException e) {
-          Log.e(TAG, String.format("MemSizeInBytes: %d", memSize));
+          // Log.e(TAG, String.format("MemSizeInBytes: %d", memSize));
         } catch (Exception e) {
-          Log.e(TAG, String.format("NDEF Length: %d", ndefLen));
+          // Log.e(TAG, String.format("NDEF Length: %d", ndefLen));
         }
 
         returnVal.put("k", "onDiscovered");
@@ -739,19 +686,19 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       return;
     }
     // 提交任务并返回 Future 对象
-    Future<Map<String, Object>> future = executorService.submit(new Callable<Map<String, Object>>() {
+    executorService.submit(new Callable() {
       @Override
-      public Map<String, Object> call() throws Exception {
+      public Object call() throws Exception {
         Map<String, Object> ndefData = new HashMap<>();
 
         try {
           NDEFMsg ndefmsg = mST25DVTag.readNdefMessage();
           for (NDEFRecord record : ndefmsg.getNDEFRecords()) {
-            if (record.getPayload().length<=3) {
+            if (record.getPayload().length <= 3) {
               continue;
             }
             byte[] langByte = new byte[2];
-            int leng = record.getPayload().length-3;
+            int leng = record.getPayload().length - 3;
             byte[] value = new byte[leng];
             System.arraycopy(record.getPayload(), 1, langByte, 0, 2);
             System.arraycopy(record.getPayload(), 3, value, 0, leng);
@@ -766,19 +713,16 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         } catch (Exception e) {
           sendToastMessage("Read NDEF message Exception: " + e.getMessage());
         }
+
+        activity.runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            result.success(ndefData);
+          }
+        });
         return ndefData;
       }
     });
-    Map<String, Object> ndefData = new HashMap<>();
-    try {
-      ndefData = future.get();
-      if (ndefData != null) {
-        result.success(ndefData);
-      }
-    } catch (Exception e) {
-      e.printStackTrace();
-      result.error("Err", "readNDEF err", e);
-    }
   }
 
   // 从 ST25DVTag 对象中获取NDEF格式的信息
@@ -787,9 +731,10 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       return;
     }
     // 提交任务并返回 Future 对象
-    Future<Boolean> future = executorService.submit(new Callable<Boolean>() {
+    executorService.submit(new Callable() {
       @Override
-      public Boolean call() throws Exception {
+      public Object call() throws Exception {
+        boolean isSuccess= true;
         try {
           NDEFMsg ndefmsg = new NDEFMsg();
 
@@ -800,25 +745,26 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           mST25DVTag.writeNdefMessage(ndefmsg);
         } catch (STException e) {
           sendToastMessage("write NDEF message STException: " + e.getMessage());
-          return false;
+          isSuccess= false;
         } catch (Exception e) {
           sendToastMessage("write NDEF message Exception: " + e.getMessage());
-          return false;
+          isSuccess= false;
         }
-        return true;
+
+        boolean finalIsSuccess = isSuccess;
+        activity.runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            result.success(finalIsSuccess);
+          }
+        });
+        return null;
       }
     });
-    try {
-      Boolean done = future.get();
-      result.success(done);
-    } catch (Exception e) {
-      e.printStackTrace();
-      result.success(false);
-    }
   }
 
   // 把自动数据转发给 Flutter
-  public void sendProgressData(boolean isTransmitted, int tORrBytes, int acknowledgedBytes, int totalSize) {
+  public void updateProgress(boolean isTransmitted, int tORrBytes, int acknowledgedBytes, int totalSize) {
     int progress = (acknowledgedBytes * 100) / totalSize;
     int secondaryProgress = (tORrBytes * 100) / totalSize;
 
@@ -829,33 +775,18 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       if (isTransmitted) {
         data.put("k", "transmissionProgress");
         data.put("transmittedBytes", tORrBytes);
-        Log.i(TAG, String.format(">>>T:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-            secondaryProgress));
+        // Log.i(TAG, String.format("->>T:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
+        //     secondaryProgress));
       } else {
         data.put("k", "receptionProgress");
         data.put("receivedBytes", tORrBytes);
-        Log.i(TAG, String.format(">>>R:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-            secondaryProgress));
+        // Log.i(TAG, String.format("->>R:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
+        //     secondaryProgress));
       }
       data.put("acknowledgedBytes", acknowledgedBytes);
       data.put("totalSize", totalSize);
 
-      // 使用 Handler 发送消息
-      Message msg = progressHandle.obtainMessage(UPDATE_PROGRESS, progress,
-          secondaryProgress, data);
-      progressHandle.sendMessage(msg);
-
-      // activity.runOnUiThread(new Runnable() {
-      // public void run() {
-      // Log.i(TAG, ">>>R3");
-      // // eventChannelSink.success(data);
-      // }
-      // });
-
-      if (progressViewModel != null) {
-        // 更新 LiveData，通知 UI 线程更新
-        progressViewModel.updateProgress(data);
-      }
+      eventChannelSink.success(data);
     }
   }
 
@@ -871,18 +802,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     return hexString.toString();
   }
 
-  public static class ProgressViewModel extends ViewModel {
-    private final MutableLiveData<Map<String, Object>> progress = new MutableLiveData<>();
-
-    public MutableLiveData<Map<String, Object>> getProgress() {
-      return progress;
-    }
-
-    // 更新 LiveData 中的 Map 数据
-    public void updateProgress(Map<String, Object> data) {
-      progress.postValue(data); // postValue 适用于后台线程更新数据
-    }
-  }
 
   @Override
   // eventChannelSink

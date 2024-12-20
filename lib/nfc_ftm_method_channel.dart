@@ -19,8 +19,6 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   late StreamController<String> toastController;
   late Stream<String> toastStream;
 
-  // static StreamController<String>
-
   NfcTagCallback? nfcTagCallback;
   TransmissionProgress? transmissionProgress;
   ReceptionProgress? receptionProgress;
@@ -28,7 +26,6 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   MethodChannelNfcFtm() {
     initToastStream();
     eventChannel.receiveBroadcastStream().listen((event) {
-      print('>>>event: $event');
       if (event.runtimeType.toString() != "_Map<Object?, Object?>") {
         return;
       }
@@ -213,9 +210,14 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
     return result ?? false;
   }
 
-  void initToastStream() {
-    toastController = StreamController<String>.broadcast();
-    toastStream = toastController.stream.asBroadcastStream();
+  void initToastStream({String streamName = 'toast'}) {
+    switch (streamName) {
+      case 'toast':
+        toastController = StreamController<String>.broadcast();
+        toastStream = toastController.stream.asBroadcastStream();
+        break;
+      default:
+    }
   }
 
   @override
@@ -225,15 +227,25 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
-  void reopenToastStream() {
-    if (toastController.isClosed) {
-      initToastStream();
+  void reopenToastStream({String streamName = 'toast'}) {
+    switch (streamName) {
+      case 'toast':
+        if (toastController.isClosed) {
+          initToastStream();
+        }
+        break;
+      default:
     }
   }
 
   @override
-  void closeToastStream() {
-    toastController.close();
+  void closeToastStream({String streamName = 'toast'}) {
+    switch (streamName) {
+      case 'toast':
+        toastController.close();
+        break;
+      default:
+    }
   }
 }
 

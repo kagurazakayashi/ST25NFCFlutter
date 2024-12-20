@@ -40,12 +40,12 @@ class MockNfcFtmPlatform
   }
 
   @override
-  void reopenToastStream() {
+  void reopenToastStream({String streamName = 'toast'}) {
     throw UnimplementedError();
   }
 
   @override
-  void closeToastStream() {}
+  void closeToastStream({String streamName = 'toast'}) {}
 
   @override
   NfcTagCallback? onDiscovered;

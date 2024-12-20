@@ -97,7 +97,7 @@ class NfcFtm {
     return NfcFtmPlatform.instance.readNdefTag();
   }
 
-  Future<bool> writeNdefTag(String data){
+  Future<bool> writeNdefTag(String data) {
     return NfcFtmPlatform.instance.writeNdefTag(data);
   }
 
@@ -105,12 +105,12 @@ class NfcFtm {
     return NfcFtmPlatform.instance.getToastStream();
   }
 
-  void reopenToastStream() {
-    return NfcFtmPlatform.instance.reopenToastStream();
+  void reopenToastStream({String streamName = 'toast'}) {
+    return NfcFtmPlatform.instance.reopenToastStream(streamName: streamName);
   }
 
-  void closeToastStream() {
-    return NfcFtmPlatform.instance.closeToastStream();
+  void closeToastStream({String streamName = 'toast'}) {
+    return NfcFtmPlatform.instance.closeToastStream(streamName: streamName);
   }
 
   Future<void> dispose() async {
