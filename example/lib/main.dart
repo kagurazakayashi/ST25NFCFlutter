@@ -161,7 +161,7 @@ class _MyAppState extends State<MyApp> {
                       });
                       String data = "{\"Rd\":[[-1,-65533],[1,3],5]}";
                       print(">> payload: ${utf8.encode(data)}");
-                      
+
                       List<int> resultByte = await _nfcFtmPlugin
                           .sendFTMData(utf8.encode(data), receptionProgress: (
                         transmittedBytes,
@@ -175,7 +175,6 @@ class _MyAppState extends State<MyApp> {
                           secProgress = secondaryProgress / 100;
                         });
                         print(">>>RRR: $progress % | $secondaryProgress %");
-                        return Future.value();
                       });
                       sendFTMDataResult = utf8.decode(resultByte);
                       print(">>@@>> byte: $sendFTMDataResult");

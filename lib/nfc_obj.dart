@@ -1,7 +1,7 @@
 typedef NfcTagCallback = Future<void> Function(NfcTag tag);
 
 // 发送数据的进度回调
-typedef TransmissionProgress = Future<void> Function(
+typedef TransmissionProgress = void Function(
   int transmittedBytes,
   int acknowledgedBytes,
   int totalSize,
@@ -10,7 +10,7 @@ typedef TransmissionProgress = Future<void> Function(
 );
 
 // 接收数据的进度回调
-typedef ReceptionProgress = Future<void> Function(
+typedef ReceptionProgress = void Function(
   int receivedBytes,
   int acknowledgedBytes,
   int totalSize,
