@@ -301,7 +301,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       // 处理异常（例如，打印错误日志）
       e.printStackTrace();
       Log.e(TAG, String.format("*** send STException: %s", e.getMessage()));
-      throw new Exception("NO_FTM_MODE");
+      throw new Exception(eStr);
       // 你可以根据需要采取适当的操作，比如返回默认值或者重新抛出
     } catch (InterruptedException e) {
       Log.e(TAG, String.format("*** send InterruptedException: %s", e.getMessage()));
@@ -321,7 +321,10 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           responseData = FTMrwData(cmd, data);
         } catch (Exception e) {
           e.printStackTrace();
-          sendToastMessage(e.getMessage());
+          String err = e.getMessage();
+          err = "Error " + err;
+          err = err.replace("Error Error", "Error");
+          sendToastMessage(err);
         }
         byte[] finalResponseData = responseData;
         activity.runOnUiThread(new Runnable() {
@@ -734,7 +737,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     executorService.submit(new Callable() {
       @Override
       public Object call() throws Exception {
-        boolean isSuccess= true;
+        boolean isSuccess = true;
         try {
           NDEFMsg ndefmsg = new NDEFMsg();
 
@@ -745,10 +748,10 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           mST25DVTag.writeNdefMessage(ndefmsg);
         } catch (STException e) {
           sendToastMessage("write NDEF message STException: " + e.getMessage());
-          isSuccess= false;
+          isSuccess = false;
         } catch (Exception e) {
           sendToastMessage("write NDEF message Exception: " + e.getMessage());
-          isSuccess= false;
+          isSuccess = false;
         }
 
         boolean finalIsSuccess = isSuccess;
@@ -775,13 +778,15 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       if (isTransmitted) {
         data.put("k", "transmissionProgress");
         data.put("transmittedBytes", tORrBytes);
-        // Log.i(TAG, String.format("->>T:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-        //     secondaryProgress));
+        // Log.i(TAG, String.format("->>T:%d / %d bytes | %d %% | %d %%", tORrBytes,
+        // totalSize, progress,
+        // secondaryProgress));
       } else {
         data.put("k", "receptionProgress");
         data.put("receivedBytes", tORrBytes);
-        // Log.i(TAG, String.format("->>R:%d / %d bytes | %d %% | %d %%", tORrBytes, totalSize, progress,
-        //     secondaryProgress));
+        // Log.i(TAG, String.format("->>R:%d / %d bytes | %d %% | %d %%", tORrBytes,
+        // totalSize, progress,
+        // secondaryProgress));
       }
       data.put("acknowledgedBytes", acknowledgedBytes);
       data.put("totalSize", totalSize);
@@ -801,7 +806,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     }
     return hexString.toString();
   }
-
 
   @Override
   // eventChannelSink
