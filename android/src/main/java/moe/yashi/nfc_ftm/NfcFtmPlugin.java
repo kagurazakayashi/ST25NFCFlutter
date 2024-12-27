@@ -197,8 +197,8 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           mFtmCommands.cancelCurrentTransfer();
           mFtmCommands = null;
         }
-        openNFC(result);
-        result.success(true);
+        boolean isOpenNFC = openNFC(result);
+        result.success(isOpenNFC);
         break;
       case "getFTM":
         if (mST25DVTag == null) {
@@ -246,17 +246,17 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     }
   }
 
-  //
+  // MARK: 开启NFC
   public boolean openNFC(@NonNull Result result) {
     boolean isEnabledNFC = isNfcSupported(context);
     if (!isEnabledNFC) {
-      sendToastMessage("NFC no found");
+      sendToastMessage("NFC not found");
       result.success(isEnabledNFC);
       return false;
     }
     initNFCAdapter();
     if (mnfcAdapter == null) {
-      sendToastMessage("mnfcAdapter no found!");
+      sendToastMessage("mnfcAdapter not found!");
       result.success(false);
       return false;
     }
@@ -264,6 +264,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     return true;
   }
 
+  // MARK: 初始化 NFC FTM
   public void initFTM() {
     if (mFtmCommands != null) {
       mFtmCommands.cancelCurrentTransfer();
@@ -284,6 +285,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     nfcState = 4;
   }
 
+  // MARK: 通过 FTM 通道发送数据
   public byte[] FTMrwData(byte cmd, byte[] sendData) throws Exception {
     if (mFtmCommands == null) {
       throw new Exception("Send FTM data error: mFtmCommands is null");
@@ -311,7 +313,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     return reData;
   }
 
-  // 创建一个线程池，用于执行FTM发送数据任务
+  // MARK: 创建一个线程池，用于执行FTM发送数据任务
   private void handleFTMOperation(MethodChannel.Result result, byte cmd, byte[] data) {
     executorService.submit(new Callable() {
       @Override
@@ -338,6 +340,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     });
   }
 
+  // MARK: 向 Flutter 发送 toast 信息
   public void sendToastMessage(String message) {
     Map<String, String> messageMap = new HashMap();
     messageMap.put("k", "toast");
@@ -389,7 +392,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     pListener = new ProgressListener(this);
   }
 
-  // 判断NFC标签是否可用
+  // MARK: 判断NFC标签是否可用
   public static boolean isNfcSupported(Context context) {
     NfcManager nfcManager = null;
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.GINGERBREAD_MR1) {
@@ -400,7 +403,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     return nfcAdapter != null && nfcAdapter.isEnabled();
   }
 
-  // 初始化 NFC
+  // MARK: 初始化 NFC
   public void initNFCAdapter() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.GINGERBREAD_MR1) {
       return;
@@ -409,7 +412,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     mnfcAdapter = nfcManager.getDefaultAdapter();
   }
 
-  // 开启 NFC 扫描
+  // MARK: 开启 NFC 扫描
   public void enableReaderMode() {
     Intent intent = new Intent(activity, activity.getClass());
     intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -663,7 +666,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     nfcState = 1;
   }
 
-  // 关闭 NFC 扫描 关闭 FTM 通道
+  // MARK: 关闭 NFC 扫描 关闭 FTM 通道
   public boolean disableReaderMode() {
     // mnfcAdapter.disableForegroundDispatch(activity);
     if (mFtmCommands != null) {
@@ -683,7 +686,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     return false;
   }
 
-  // 从 ST25DVTag 对象中获取NDEF格式的信息
+  // MARK: 从 ST25DVTag 对象中获取NDEF格式的信息
   private void readNdef(@NonNull Result result) {
     if (mST25DVTag == null) {
       return;
@@ -728,7 +731,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     });
   }
 
-  // 从 ST25DVTag 对象中获取NDEF格式的信息
+  // MARK: 从 ST25DVTag 对象中获取NDEF格式的信息
   private void writeNdef(@NonNull Result result, String data) {
     if (mST25DVTag == null) {
       return;
@@ -766,7 +769,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     });
   }
 
-  // 把自动数据转发给 Flutter
+  // MARK: 把进度数据转发给 Flutter
   public void updateProgress(boolean isTransmitted, int tORrBytes, int acknowledgedBytes, int totalSize) {
     int progress = (acknowledgedBytes * 100) / totalSize;
     int secondaryProgress = (tORrBytes * 100) / totalSize;
