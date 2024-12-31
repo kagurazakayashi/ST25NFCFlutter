@@ -71,6 +71,11 @@ class MockNfcFtmPlatform
   Future<bool> writeNdefTag(String data) {
     throw UnimplementedError();
   }
+  
+  @override
+  void cancelTransfer() {
+    throw UnimplementedError();
+  }
 }
 
 void main() {

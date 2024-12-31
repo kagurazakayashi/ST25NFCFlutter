@@ -177,6 +177,11 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
+  void cancelTransfer() {
+    methodChannel.invokeMethod<void>('FTMcancel');
+  }
+
+  @override
   Future<NdefTag?> readNdefTag() async {
     final result = await methodChannel.invokeMethod<Map>('NDEF@read');
     if (result == null) {

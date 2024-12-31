@@ -93,6 +93,10 @@ class NfcFtm {
     );
   }
 
+  void cancelTransfer(){
+    return NfcFtmPlatform.instance.cancelTransfer();
+  }
+
   Future<NdefTag?> readNdefTag() {
     return NfcFtmPlatform.instance.readNdefTag();
   }
