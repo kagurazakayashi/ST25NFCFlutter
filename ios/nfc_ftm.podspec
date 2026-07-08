@@ -4,18 +4,20 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'nfc_ftm'
-  s.version          = '0.0.1'
-  s.summary          = 'A new Flutter plugin project.'
+  s.version          = '0.1.0'
+  s.summary          = 'Flutter plugin for ST25 NFC tags with FTM support.'
   s.description      = <<-DESC
-A new Flutter plugin project.
+Flutter plugin for ST25 NFC tags with FTM (Fast Transfer Mode) support.
+Enables NDEF read/write, fast data transfer, and tag discovery for
+STMicroelectronics ST25 series NFC tags.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/yashi/nfc_ftm'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'yashi' => 'moe@yashi.moe' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.platform = :ios, '12.0'
+  s.platform = :ios, '13.0'
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }

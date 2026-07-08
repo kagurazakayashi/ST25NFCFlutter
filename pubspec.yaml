@@ -1,6 +1,6 @@
 name: nfc_ftm
-description: "A new Flutter plugin project."
-version: 0.0.1
+description: "Flutter plugin for ST25 NFC tags with FTM (Fast Transfer Mode) support. NDEF read/write, tag discovery, and fast data transfer via ST25SDK."
+version: 0.1.0
 homepage:
 
 environment:

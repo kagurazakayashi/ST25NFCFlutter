@@ -1,16 +1,19 @@
 # nfc_ftm_example
 
-Demonstrates how to use the nfc_ftm plugin.
+Demonstrates how to use the `nfc_ftm` plugin for ST25 NFC tag communication.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+1. Install dependencies:
+   ```bash
+   cd example && flutter pub get
+   ```
 
-A few resources to get you started if this is your first Flutter project:
+2. **Android**: Place `st25sdk-1.10.0.jar` in `android/libs/` before building.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+3. **iOS**: Pods are pre-installed. Ensure the NFC capability is enabled in Xcode.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+4. Run on a real device (NFC is not available in simulators):
+   ```bash
+   flutter run
+   ```

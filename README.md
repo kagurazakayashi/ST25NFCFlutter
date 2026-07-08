@@ -6,25 +6,27 @@ Flutter plugin for ST25 NFC tags with FTM (Fast Transfer Mode) support. Enables 
 
 | Platform | Support |
 |----------|---------|
-| Android  | Full support (ST25SDK) |
-| iOS      | Partial (stub, in development) |
+| Android  | Full support (ST25SDK 1.10.0) |
+| iOS      | Full support (CoreNFC, iOS 13+) |
 
 ## Prerequisites
 
 ### Android
 
-- Minimum SDK: 21
-- Compile SDK: 34
+- Minimum SDK: 21 / Compile SDK: 34
 - Requires `st25sdk-1.10.0.jar` placed in `android/libs/`
+- Add to `android/app/build.gradle`:
+  ```groovy
+  android {
+      compileSdk = 34
+  }
+  ```
 
-Add the following to your app's `android/app/build.gradle`:
+### iOS
 
-```groovy
-android {
-    compileSdk = 34
-    // ...
-}
-```
+- Minimum iOS: 13.0
+- Requires NFC capability in Xcode project
+- Add `NFCReaderUsageDescription` to Info.plist
 
 ## Installation
 
