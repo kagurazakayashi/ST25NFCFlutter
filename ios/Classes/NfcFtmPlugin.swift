@@ -1,371 +1,41 @@
 import Flutter
 import UIKit
 import CoreNFC
-
 import Foundation
-import CoreNFC
+import st25sdkFramework
 
-// MARK: - CRC32 (MPEG-2, matching ST25 SDK)
+// MARK: - FTM Command Constants (matching ST25SDK FtmCommands.h)
 
-func stFTMCRC32(_ data: Data) -> UInt32 {
-    let polynomial: UInt32 = 0x04C11DB7
-    var crc: UInt32 = 0xFFFFFFFF
-    for i in 0..<data.count {
-        var word: UInt32 = UInt32(data[i])
-        word <<= 24
-        for _ in 0..<8 {
-            if (crc ^ word) & 0x80000000 != 0 {
-                crc = ((crc << 1) ^ polynomial) & 0xFFFFFFFF
-            } else {
-                crc = crc << 1
-            }
-            word <<= 1
-        }
-    }
-    return crc
-}
+private let FTM_CMD_SEND_DATA: UInt8 = 5
+private let FTM_CMD_READ_DATA: UInt8 = 6
 
-// MARK: - ST25DV ISO 15693 Custom Command Codes
+// Header size constants (from Iso15693Protocol.h)
+private let ISO15693_HEADER_SIZE_UID: Int = 10
+private let ISO15693_CUSTOM_ST_HEADER_SIZE_UID: Int = 11
 
-enum StCmd: UInt8 {
-    case writeMessage       = 0xAA
-    case readMessageLength  = 0xAB
-    case readMessage        = 0xAC
-    case readDynConfig      = 0xAD
-    case writeDynConfig     = 0xAE
-}
+// MARK: - Progress Listener (bridges SDK -> Flutter EventChannel)
 
-// MARK: - FTM Protocol Constants
+class SDKProgressListener: NSObject, ComStSt25sdkFtmprotocolFtmProtocol_TransferProgressionListener {
 
-enum FtmConst {
-    static let chainedHeaderSize     = 13
-    static let simpleHeaderSize      = 5
-
-    static let transferCommand: UInt8   = 0
-    static let transferAnswer: UInt8    = 1
-    static let transferAck: UInt8       = 2
-    static let transferOk: UInt8        = 0
-    static let transferError: UInt8     = 1
-
-    static let functionBasicTransfer: UInt8 = 3
-
-    static let mailboxSize           = 256
-    static let pollIntervalMs        = 200
-    static let timeoutMs             = 10000
-}
-
-// MARK: - Mailbox helpers
-
-@available(iOS 13.0, *)
-class FtmMailbox {
-    let isoTag: NFCISO15693Tag
-
-    init(isoTag: NFCISO15693Tag) {
-        self.isoTag = isoTag
-    }
-
-    func writeMessage(_ data: Data) async throws {
-        let sizeByte = UInt8(data.count - 1)
-        var params = Data([sizeByte])
-        params.append(data)
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            isoTag.customCommand(requestFlags: [],
-                                  customCommandCode: Int(StCmd.writeMessage.rawValue),
-                                  customRequestParameters: params) { response, error in
-                if let error = error {
-                    cont.resume(throwing: error)
-                } else if response.first == 0x00 {
-                    cont.resume()
-                } else {
-                    cont.resume(throwing: NSError(domain: "FTM", code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: "Write message failed: \(String(describing: response))"]))
-                }
-            }
-        }
-    }
-
-    func readMessageLength() async throws -> Int {
-        try await withCheckedThrowingContinuation { cont in
-            isoTag.customCommand(requestFlags: [],
-                                  customCommandCode: Int(StCmd.readMessageLength.rawValue),
-                                  customRequestParameters: Data()) { response, error in
-                if let error = error {
-                    cont.resume(throwing: error)
-                } else if response.count >= 2 {
-                    let len = Int(response[1]) + 1
-                    cont.resume(returning: len)
-                } else {
-                    cont.resume(throwing: NSError(domain: "FTM", code: -2,
-                        userInfo: [NSLocalizedDescriptionKey: "Read message length failed"]))
-                }
-            }
-        }
-    }
-
-    func readMessage(offset: UInt8, size: UInt8) async throws -> Data {
-        try await withCheckedThrowingContinuation { cont in
-            isoTag.customCommand(requestFlags: [],
-                                  customCommandCode: Int(StCmd.readMessage.rawValue),
-                                  customRequestParameters: Data([offset, size])) { response, error in
-                if let error = error {
-                    cont.resume(throwing: error)
-                } else {
-                    cont.resume(returning: response)
-                }
-            }
-        }
-    }
-
-    func readMailboxMessage() async throws -> Data {
-        let len = try await readMessageLength()
-        guard len > 0 else {
-            throw NSError(domain: "FTM", code: -4,
-                userInfo: [NSLocalizedDescriptionKey: "Mailbox message length is 0"])
-        }
-        let resp = try await readMessage(offset: 0, size: UInt8(min(len, FtmConst.mailboxSize)))
-        guard !resp.isEmpty, resp[0] == 0x00 else {
-            throw NSError(domain: "FTM", code: -5,
-                userInfo: [NSLocalizedDescriptionKey: "Empty or invalid mailbox response"])
-        }
-        return Data(resp.dropFirst())
-    }
-
-    func readDynConfig(register: UInt8) async throws -> UInt8 {
-        try await withCheckedThrowingContinuation { cont in
-            isoTag.customCommand(requestFlags: [],
-                                  customCommandCode: Int(StCmd.readDynConfig.rawValue),
-                                  customRequestParameters: Data([register])) { response, error in
-                if let error = error {
-                    cont.resume(throwing: error)
-                } else if response.count >= 2, response[0] == 0x00 {
-                    cont.resume(returning: response[1])
-                } else {
-                    cont.resume(throwing: NSError(domain: "FTM", code: -6,
-                        userInfo: [NSLocalizedDescriptionKey: "Read dyn config failed"]))
-                }
-            }
-        }
-    }
-
-    func writeDynConfig(register: UInt8, value: UInt8) async throws {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            isoTag.customCommand(requestFlags: [],
-                                  customCommandCode: Int(StCmd.writeDynConfig.rawValue),
-                                  customRequestParameters: Data([register, value])) { response, error in
-                if let error = error {
-                    cont.resume(throwing: error)
-                } else {
-                    cont.resume()
-                }
-            }
-        }
-    }
-
-    func hasHostPutMsg() async throws -> Bool {
-        let ctrl = try await readDynConfig(register: 0x00)
-        return (ctrl & 0x01) != 0
-    }
-
-    func hasRFPutMsg() async throws -> Bool {
-        let ctrl = try await readDynConfig(register: 0x00)
-        return (ctrl & 0x02) != 0
-    }
-}
-
-// MARK: - FTM Transfer Task
-
-@available(iOS 13.0, *)
-class FtmTransferTask {
-    let mailbox: FtmMailbox
-    var onTransmissionProgress: ((Int, Int, Int, Int, Int) -> Void)?
-    var onReceptionProgress: ((Int, Int, Int, Int, Int) -> Void)?
-
-    init(mailbox: FtmMailbox) {
-        self.mailbox = mailbox
-    }
-
-    func sendCommandAndWait(_ cmd: UInt8, data: Data) async throws -> Data {
-        let requestPayload = Data([cmd]) + data
-        return try await uploadAndDownload(requestPayload)
-    }
-
-    private func buildChainedHeader(payloadLen: Int, totalSize: Int, chunkIndex: Int, totalChunks: Int, function: UInt8) -> Data {
-        var frame = Data(count: FtmConst.chainedHeaderSize)
-        frame[0] = function
-        frame[1] = FtmConst.transferCommand
-        frame[2] = FtmConst.transferOk
-        frame[3] = 0x01
-        frame[4] = UInt8((totalSize >> 24) & 0xFF)
-        frame[5] = UInt8((totalSize >> 16) & 0xFF)
-        frame[6] = UInt8((totalSize >> 8) & 0xFF)
-        frame[7] = UInt8(totalSize & 0xFF)
-        frame[8] = UInt8((totalChunks >> 8) & 0xFF)
-        frame[9] = UInt8(totalChunks & 0xFF)
-        frame[10] = UInt8((chunkIndex >> 8) & 0xFF)
-        frame[11] = UInt8(chunkIndex & 0xFF)
-        frame[12] = UInt8(payloadLen & 0xFF)
-        return frame
-    }
-
-    private func buildCrcFrame(crc: UInt32, function: UInt8) -> Data {
-        var frame = Data(count: 9)
-        frame[0] = function
-        frame[1] = FtmConst.transferAck
-        frame[2] = 0x00
-        frame[3] = 0x00
-        frame[4] = 0x04
-        frame[5] = UInt8((crc >> 24) & 0xFF)
-        frame[6] = UInt8((crc >> 16) & 0xFF)
-        frame[7] = UInt8((crc >> 8) & 0xFF)
-        frame[8] = UInt8(crc & 0xFF)
-        return frame
-    }
-
-    private func buildAckFrame(ok: Bool, function: UInt8) -> Data {
-        var frame = Data(count: 5)
-        frame[0] = function
-        frame[1] = FtmConst.transferAck
-        frame[2] = ok ? FtmConst.transferOk : FtmConst.transferError
-        frame[3] = 0x00
-        frame[4] = 0x00
-        return frame
-    }
-
-    private func uploadAndDownload(_ payload: Data) async throws -> Data {
-        let function = FtmConst.functionBasicTransfer
-
-        let maxPayload = FtmConst.mailboxSize - FtmConst.chainedHeaderSize
-        let totalChunks = max((payload.count + maxPayload - 1) / maxPayload, 1)
-        let totalSize = payload.count
-
-        // Step 1: Upload chunks
-        var offset = 0
-        var chunkIndex = 1
-        while offset < payload.count {
-            let remaining = payload.count - offset
-            let chunkSize = min(remaining, maxPayload)
-            let chunkData = payload.subdata(in: offset..<offset+chunkSize)
-
-            var header = buildChainedHeader(payloadLen: chunkSize,
-                                            totalSize: totalSize,
-                                            chunkIndex: chunkIndex,
-                                            totalChunks: totalChunks,
-                                            function: function)
-            header.append(chunkData)
-
-            try await mailbox.writeMessage(header)
-
-            let progress = Int(Double(offset + chunkSize) / Double(totalSize) * 100)
-            onTransmissionProgress?(offset + chunkSize, 0, totalSize, progress, progress)
-
-            offset += chunkSize
-            chunkIndex += 1
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
-
-        // Step 2: Wait for CRC response from MCU
-        let crcResponse = try await waitForMailboxMessage()
-
-        // Verify CRC response
-        let localCrc = stFTMCRC32(payload)
-        if crcResponse.count >= 9, crcResponse[4] == 0x04 {
-            let remoteCrc = (UInt32(crcResponse[5]) << 24) |
-                            (UInt32(crcResponse[6]) << 16) |
-                            (UInt32(crcResponse[7]) << 8) |
-                            UInt32(crcResponse[8])
-            guard remoteCrc == localCrc else {
-                throw NSError(domain: "FTM", code: -10,
-                    userInfo: [NSLocalizedDescriptionKey: "CRC mismatch: local=\(localCrc) remote=\(remoteCrc)"])
-            }
-        }
-
-        // Step 3: Send ACK (OK)
-        let ackFrame = buildAckFrame(ok: true, function: function)
-        try await mailbox.writeMessage(ackFrame)
-
-        // Step 4: Read response from MCU
-        let response = try await waitForMailboxMessage()
-
-        // Return response data (skip chained header)
-        let responsePayload: Data
-        if response.count > FtmConst.chainedHeaderSize {
-            let respPayloadLen = Int(response[12] & 0xFF)
-            let available = response.count - FtmConst.chainedHeaderSize
-            let readLen = min(respPayloadLen, available)
-            responsePayload = response.subdata(in: FtmConst.chainedHeaderSize..<(FtmConst.chainedHeaderSize + readLen))
-        } else {
-            responsePayload = response
-        }
-
-        return responsePayload
-    }
-
-    private func waitForMailboxMessage() async throws -> Data {
-        // Give MCU time to process before first poll
-        try await Task.sleep(nanoseconds: UInt64(FtmConst.pollIntervalMs) * 1_000_000)
-
-        let startTime = Date()
-        while true {
-            let elapsed = Date().timeIntervalSince(startTime) * 1000
-            if elapsed > Double(FtmConst.timeoutMs) {
-                throw NSError(domain: "FTM", code: -20,
-                    userInfo: [NSLocalizedDescriptionKey: "FTM timeout waiting for response"])
-            }
-
-            do {
-                if try await mailbox.hasHostPutMsg() {
-                    return try await mailbox.readMailboxMessage()
-                }
-            } catch let err as NFCReaderError {
-                if err.errorCode == NFCReaderError.Code.readerSessionInvalidationErrorSessionTerminatedUnexpectedly.rawValue
-                    || err.errorCode == NFCReaderError.Code.readerSessionInvalidationErrorUserCanceled.rawValue
-                    || err.errorCode == NFCReaderError.Code.readerSessionInvalidationErrorSessionTimeout.rawValue {
-                    throw err
-                }
-                // Retry on transceive errors (tag connection lost, etc.)
-            } catch {
-                // Ignore polling errors, keep trying
-            }
-
-            try await Task.sleep(nanoseconds: UInt64(FtmConst.pollIntervalMs) * 1_000_000)
-        }
-    }
-}
-
-
-// MARK: - Progress Listener
-
-class ProgressListener {
     private weak var plugin: NfcFtmPlugin?
 
     init(plugin: NfcFtmPlugin) {
         self.plugin = plugin
+        super.init()
     }
 
-    func transmissionProgress(
-        transmittedBytes: Int,
-        acknowledgedBytes: Int,
-        totalSize: Int
-    ) {
-        plugin?.updateProgress(
-            isTransmitted: true,
-            tORrBytes: transmittedBytes,
-            acknowledgedBytes: acknowledgedBytes,
-            totalSize: totalSize
-        )
+    func transmissionProgress(with jint: jint, with jint2: jint, with jint3: jint) {
+        plugin?.sendProgressUpdate(isTransmitted: true,
+                                   tORrBytes: Int(jint),
+                                   acknowledgedBytes: Int(jint2),
+                                   totalSize: Int(jint3))
     }
 
-    func receptionProgress(
-        receivedBytes: Int,
-        acknowledgedBytes: Int,
-        totalSize: Int
-    ) {
-        plugin?.updateProgress(
-            isTransmitted: false,
-            tORrBytes: receivedBytes,
-            acknowledgedBytes: acknowledgedBytes,
-            totalSize: totalSize
-        )
+    func receptionProgress(with jint: jint, with jint2: jint, with jint3: jint) {
+        plugin?.sendProgressUpdate(isTransmitted: false,
+                                   tORrBytes: Int(jint),
+                                   acknowledgedBytes: Int(jint2),
+                                   totalSize: Int(jint3))
     }
 }
 
@@ -388,12 +58,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private var methodChannel: FlutterMethodChannel?
 
     // MARK: - NFC State
-    // -1: NFC not available
-    //  0: NFC disabled
-    //  1: NFC enabled
-    //  2: NFC tag discovered
-    //  3: NFC enabled, FTM mode, mFtmCommands not initialized
-    //  4: NFC enabled, FTM mode
+
     private var nfcState: Int = 0
 
     private var isFTMmode = false
@@ -403,28 +68,24 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private var ndefSession: NFCNDEFReaderSession?
     private var tagSession: NFCTagReaderSession?
 
-    // MARK: - ST25 SDK tag objects
+    // MARK: - ST25SDK objects
 
+    private var rfReaderInterface: iOSRFReaderInterface?
+    private var st25DVTag: ComStSt25sdkType5St25dvST25DVTag?
+    private var ftmCommands: ComStSt25sdkFtmprotocolFtmCommands?
     private var mST25DVTag: AnyObject?
-    private var mFTmIsoTag: NFCISO15693Tag?
-    private var mFtmCommands: AnyObject?
 
     // MARK: - Progress listener
 
-    private var pListener: ProgressListener?
+    private var progressListener: SDKProgressListener?
 
-    // MARK: - Operation queue
+    // MARK: - FTM background queue
 
-    private let operationQueue = DispatchQueue(label: "com.nfcftm.ios.operation")
+    private let ftmQueue = DispatchQueue(label: "com.nfcftm.ios.ftm", qos: .userInitiated)
 
-    // MARK: - Pending operation (lazy session start)
+    // MARK: - Pending operation
 
     private var pendingOp: PendingOperation?
-
-    // MARK: - FTM command constants
-
-    private static let FTM_CMD_SEND_DATA: UInt8 = 5
-    private static let FTM_CMD_READ_DATA: UInt8 = 6
 
     // MARK: - FlutterPlugin registration
 
@@ -479,40 +140,27 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     private func handleIsAvailable(_ result: @escaping FlutterResult) {
         let available = isNFCEnabled()
-        if !available {
-            nfcState = -1
-        }
+        if !available { nfcState = -1 }
         sendToastMessage(message: "isEnabledNFC: \(available)")
         result(available)
     }
 
-    // MARK: - openNFC
+    // MARK: - openNFC / closeNFC / openFTM
 
     private func handleOpenNFC(_ result: @escaping FlutterResult) {
         isFTMmode = false
-        if mFtmCommands != nil {
-            cancelFTMTransfer()
-            mFtmCommands = nil
-        }
+        cancelFTMTransfer()
         nfcState = 1
         result(true)
     }
 
-    // MARK: - closeNFC
-
     private func handleCloseNFC(_ result: @escaping FlutterResult) {
-        let done = disableReaderMode()
-        result(done)
+        result(disableReaderMode())
     }
-
-    // MARK: - openFTM
 
     private func handleOpenFTM(_ result: @escaping FlutterResult) {
         isFTMmode = true
-        if mFtmCommands != nil {
-            cancelFTMTransfer()
-            mFtmCommands = nil
-        }
+        cancelFTMTransfer()
         nfcState = 1
         result(true)
     }
@@ -520,15 +168,16 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     // MARK: - getFTM
 
     private func handleGetFTM(_ result: @escaping FlutterResult) {
-        if mST25DVTag == nil {
+        guard isFTMmode else {
+            nfcState = 3
             result(false)
             return
         }
-        initFTM()
+        nfcState = 3
         result(true)
     }
 
-    // MARK: - sendFTMData
+    // MARK: - sendFTMData / readFTMData
 
     private func handleSendFTMData(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         guard let args = call.arguments as? [String: Any],
@@ -537,11 +186,8 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "data required", details: nil))
             return
         }
-        let dataBytes = [UInt8](sendData.data)
-        startFTMSession(result: result, cmd: NfcFtmPlugin.FTM_CMD_SEND_DATA, data: dataBytes)
+        startFTMSession(result: result, cmd: FTM_CMD_SEND_DATA, data: [UInt8](sendData.data))
     }
-
-    // MARK: - readFTMData
 
     private func handleReadFTMData(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         guard let args = call.arguments as? [String: Any],
@@ -550,24 +196,20 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "data required", details: nil))
             return
         }
-        let dataBytes = [UInt8](rsendData.data)
-        startFTMSession(result: result, cmd: NfcFtmPlugin.FTM_CMD_READ_DATA, data: dataBytes)
+        startFTMSession(result: result, cmd: FTM_CMD_READ_DATA, data: [UInt8](rsendData.data))
     }
 
     // MARK: - FTMcancel
 
     private func handleFTMcancel(_ result: @escaping FlutterResult) {
-        if mFtmCommands == nil { return }
         cancelFTMTransfer()
     }
 
-    // MARK: - NDEF@read
+    // MARK: - NDEF@read / NDEF@write
 
     private func handleNDEFRead(_ result: @escaping FlutterResult) {
         startNDEFReadSession(result: result)
     }
-
-    // MARK: - NDEF@write
 
     private func handleNDEFWrite(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         guard let args = call.arguments as? [String: Any],
@@ -593,11 +235,6 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private func startNDEFReadSession(result: @escaping FlutterResult) {
         guard ndefSession == nil else {
             sendToastMessage(message: "NFC session busy, please wait")
-            result(nil)
-            return
-        }
-        if #unavailable(iOS 11.0) {
-            sendToastMessage(message: "Requires iOS 11.0 or above")
             result(nil)
             return
         }
@@ -651,7 +288,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     // MARK: - Start FTM Session
 
-    @available(iOS 13.0, *)
+    @available(iOS 14.0, *)
     private func startFTMSessionViaTagReader(result: @escaping FlutterResult, cmd: UInt8, data: [UInt8]) {
         guard tagSession == nil else {
             sendToastMessage(message: "NFC session busy, please wait")
@@ -674,10 +311,10 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     }
 
     private func startFTMSession(result: @escaping FlutterResult, cmd: UInt8, data: [UInt8]) {
-        if #available(iOS 13.0, *) {
+        if #available(iOS 14.0, *) {
             startFTMSessionViaTagReader(result: result, cmd: cmd, data: data)
         } else {
-            sendToastMessage(message: "FTM requires iOS 13.0+")
+            sendToastMessage(message: "FTM requires iOS 14.0+")
             result([])
         }
     }
@@ -685,46 +322,114 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     // MARK: - disableReaderMode
 
     func disableReaderMode() -> Bool {
-        if mFtmCommands != nil {
-            cancelFTMTransfer()
-        }
+        cancelFTMTransfer()
         nfcState = 0
         pendingOp = nil
-
-        if let session = ndefSession {
-            session.invalidate()
-            ndefSession = nil
-        }
+        ndefSession?.invalidate()
+        ndefSession = nil
         if #available(iOS 13.0, *) {
-            if let session = tagSession {
-                session.invalidate()
-                tagSession = nil
-            }
+            tagSession?.invalidate()
+            tagSession = nil
         }
         return true
     }
 
-    // MARK: - initFTM
+    // MARK: - Lazy SDK init + FTM
+
+    @available(iOS 14.0, *)
+    private func initSDKTagThenFTM(
+        isoTag: NFCISO15693Tag,
+        session: NFCTagReaderSession,
+        cmd: UInt8,
+        data: [UInt8],
+        result: @escaping FlutterResult
+    ) {
+        // Run SDK init on background queue to avoid deadlocking the NFC delegate queue
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            var exception: NSException?
+            let rf = iOSRFReaderInterface(isoTag: isoTag, session: session)
+
+            SwiftTryCatch.try({
+                let uidArray = IOSByteArray(nsData: Data(isoTag.identifier))
+                let sdkTag = ComStSt25sdkType5St25dvST25DVTag(
+                    comStSt25sdkRFReaderInterface: rf,
+                    with: uidArray
+                )
+                self.rfReaderInterface = rf
+                self.st25DVTag = sdkTag
+
+                let cmds = ComStSt25sdkFtmprotocolFtmCommands(comStSt25sdkType5St25dvST25DVTag: sdkTag)
+                self.ftmCommands = cmds
+                self.progressListener = SDKProgressListener(plugin: self)
+                self.nfcState = 4
+            }, catch: { ex in
+                exception = ex
+            }, finallyBlock: {})
+
+            if let ex = exception {
+                self.sendToastMessage(message: "ST25DVTag init error: \(ex.description)")
+                session.invalidate()
+                DispatchQueue.main.async { result([]) }
+                return
+            }
+
+            self.performFTMOperation(cmd: cmd, data: data, isoTag: isoTag, session: session, result: result)
+        }
+    }
+
+    // MARK: - initFTM (SDK-based)
 
     func initFTM() {
-        guard mST25DVTag != nil else {
+        guard let tag = st25DVTag else {
             nfcState = 3
-            sendToastMessage(message: "initFTM: mST25DVTag is nil")
+            sendToastMessage(message: "initFTM: st25DVTag is nil")
             return
         }
-        pListener = ProgressListener(plugin: self)
+
+        var commands: ComStSt25sdkFtmprotocolFtmCommands?
+        var exception: NSException?
+
+        SwiftTryCatch.try({
+            commands = ComStSt25sdkFtmprotocolFtmCommands(comStSt25sdkType5St25dvST25DVTag: tag)
+        }, catch: { ex in
+            exception = ex
+        }, finallyBlock: {})
+
+        if let ex = exception {
+            sendToastMessage(message: "initFTM error: \(ex.description)")
+            nfcState = 3
+            return
+        }
+
+        guard let cmds = commands else {
+            nfcState = 3
+            sendToastMessage(message: "initFTM: failed to create FtmCommands")
+            return
+        }
+
+        ftmCommands = cmds
+        progressListener = SDKProgressListener(plugin: self)
         nfcState = 4
     }
 
-    // MARK: - cancelFTMTransfer
+    // MARK: - cancelFTMTransfer (SDK-based)
 
     func cancelFTMTransfer() {
-        mFtmCommands = nil
+        if let cmds = ftmCommands {
+            SwiftTryCatch.try({
+                cmds.cancelCurrentTransfer()
+            }, catch: { _ in }, finallyBlock: {})
+        }
+        ftmCommands = nil
+        st25DVTag = nil
+        rfReaderInterface = nil
     }
 
-    // MARK: - FTM Operations
+    // MARK: - FTM Operations (SDK-based, using sendCmdAndWaitForCompletion)
 
-    @available(iOS 13.0, *)
+    @available(iOS 14.0, *)
     private func performFTMOperation(
         cmd: UInt8,
         data: [UInt8],
@@ -732,56 +437,78 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         session: NFCTagReaderSession,
         result: @escaping FlutterResult
     ) {
-        let mailbox = FtmMailbox(isoTag: isoTag)
-        let task = FtmTransferTask(mailbox: mailbox)
-
-        task.onTransmissionProgress = { [weak self] transmitted, acknowledged, total, progress, secondary in
-            self?.sendProgressUpdate(isTransmitted: true,
-                                     tORrBytes: transmitted,
-                                     acknowledgedBytes: acknowledged,
-                                     totalSize: total)
-        }
-        task.onReceptionProgress = { [weak self] received, acknowledged, total, progress, secondary in
-            self?.sendProgressUpdate(isTransmitted: false,
-                                     tORrBytes: received,
-                                     acknowledgedBytes: acknowledged,
-                                     totalSize: total)
+        guard let cmds = ftmCommands else {
+            sendToastMessage(message: "FTM not initialized")
+            session.invalidate()
+            result([])
+            return
         }
 
-        _ = Task { [weak self] in
-            do {
-                let response = try await task.sendCommandAndWait(cmd, data: Data(data))
+        let listener = progressListener ?? SDKProgressListener(plugin: self)
+
+        ftmQueue.async { [weak self] in
+            var responseData: IOSByteArray?
+            var exception: NSException?
+
+            SwiftTryCatch.try({
+                let dataArray = IOSByteArray(nsData: Data(data))
+
+                responseData = cmds.sendCmdAndWaitForCompletion(
+                    withByte: jbyte(cmd),
+                    with: dataArray,
+                    withBoolean: true,
+                    withBoolean: true,
+                    with: listener,
+                    with: 10000
+                )
+            }, catch: { ex in
+                exception = ex
+            }, finallyBlock: {})
+
+            session.invalidate()
+
+            DispatchQueue.main.async {
+                if let ex = exception {
+                    self?.sendToastMessage(message: "FTM error: \(ex.description)")
+                    result([])
+                    return
+                }
+
+                guard let resp = responseData else {
+                    self?.sendToastMessage(message: "FTM error: no response")
+                    result([])
+                    return
+                }
+
+                let response = resp.toNSData() ?? Data()
                 self?.sendProgressUpdate(isTransmitted: false,
                                          tORrBytes: response.count,
                                          acknowledgedBytes: response.count,
                                          totalSize: response.count)
-                session.invalidate()
-                DispatchQueue.main.async { result([UInt8](response)) }
-            } catch {
-                self?.sendToastMessage(message: "FTM error: \(error.localizedDescription)")
-                session.invalidate()
-                DispatchQueue.main.async { result([]) }
+                result([UInt8](response))
             }
         }
     }
 
-    private func sendProgressUpdate(isTransmitted: Bool, tORrBytes: Int, acknowledgedBytes: Int, totalSize: Int) {
-        guard let sink = eventSink else { return }
-        let progress: Int = totalSize > 0 ? (acknowledgedBytes * 100) / totalSize : 0
-        let secondaryProgress: Int = totalSize > 0 ? (tORrBytes * 100) / totalSize : 0
-        var data: [String: Any] = [:]
-        data["progress"] = progress
-        data["secondaryProgress"] = secondaryProgress
-        data["acknowledgedBytes"] = acknowledgedBytes
-        data["totalSize"] = totalSize
+    // MARK: - Progress Update
+
+    public func sendProgressUpdate(isTransmitted: Bool, tORrBytes: Int, acknowledgedBytes: Int, totalSize: Int) {
+        guard totalSize > 0, let sink = eventSink else { return }
+        let progress = totalSize > 0 ? (acknowledgedBytes * 100) / totalSize : 0
+        let secondaryProgress = totalSize > 0 ? (tORrBytes * 100) / totalSize : 0
+        var dataMap: [String: Any] = [:]
+        dataMap["progress"] = progress
+        dataMap["secondaryProgress"] = secondaryProgress
+        dataMap["acknowledgedBytes"] = acknowledgedBytes
+        dataMap["totalSize"] = totalSize
         if isTransmitted {
-            data["k"] = "transmissionProgress"
-            data["transmittedBytes"] = tORrBytes
+            dataMap["k"] = "transmissionProgress"
+            dataMap["transmittedBytes"] = tORrBytes
         } else {
-            data["k"] = "receptionProgress"
-            data["receivedBytes"] = tORrBytes
+            dataMap["k"] = "receptionProgress"
+            dataMap["receivedBytes"] = tORrBytes
         }
-        DispatchQueue.main.async { sink(data) }
+        DispatchQueue.main.async { sink(dataMap) }
     }
 
     // MARK: - NDEF Write via NFCNDEFTag
@@ -799,25 +526,20 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(false)
             return
         }
-
         guard ndefTag.isAvailable else {
             sendToastMessage(message: "NDEF tag not available")
             session.invalidate()
             result(false)
             return
         }
-
-        // Build UTF-8 Text Record payload for compatibility with Android
         let textPayload = buildUTF8TextNDEFPayload(text: text)
         let payload = NFCNDEFPayload(
             format: .nfcWellKnown,
-            type: Data([0x54]), // "T" for Text Record
+            type: Data([0x54]),
             identifier: Data(),
             payload: textPayload
         )
-
         let message = NFCNDEFMessage(records: [payload])
-
         ndefTag.writeNDEF(message) { writeError in
             if let nfcError = writeError as? NFCReaderError,
                nfcError.code == .ndefReaderSessionErrorZeroLengthMessage {
@@ -826,14 +548,12 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 result(true)
                 return
             }
-
             if let writeError = writeError {
                 self.sendToastMessage(message: "write NDEF error: \(writeError.localizedDescription)")
                 session.invalidate()
                 result(false)
                 return
             }
-
             self.sendToastMessage(message: "写入成功")
             session.invalidate()
             result(true)
@@ -850,32 +570,6 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         payload.append(langData)
         payload.append(textData)
         return payload
-    }
-
-    // MARK: - Progress Updates
-
-    public func updateProgress(
-        isTransmitted: Bool,
-        tORrBytes: Int,
-        acknowledgedBytes: Int,
-        totalSize: Int
-    ) {
-        guard totalSize > 0, let sink = eventSink else { return }
-        let progress = (acknowledgedBytes * 100) / totalSize
-        let secondaryProgress = (tORrBytes * 100) / totalSize
-        var data: [String: Any] = [:]
-        data["progress"] = progress
-        data["secondaryProgress"] = secondaryProgress
-        data["acknowledgedBytes"] = acknowledgedBytes
-        data["totalSize"] = totalSize
-        if isTransmitted {
-            data["k"] = "transmissionProgress"
-            data["transmittedBytes"] = tORrBytes
-        } else {
-            data["k"] = "receptionProgress"
-            data["receivedBytes"] = tORrBytes
-        }
-        DispatchQueue.main.async { sink(data) }
     }
 
     // MARK: - Toast Message
@@ -902,13 +596,13 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         eventSink events: @escaping FlutterEventSink
     ) -> FlutterError? {
         self.eventSink = events
-        pListener = ProgressListener(plugin: self)
+        progressListener = SDKProgressListener(plugin: self)
         return nil
     }
 
     public func onCancel(withArguments arguments: Any?) -> FlutterError? {
         eventSink = nil
-        pListener = nil
+        progressListener = nil
         disableReaderMode()
         return nil
     }
@@ -925,7 +619,6 @@ extension NfcFtmPlugin: NFCNDEFReaderSessionDelegate {
         nfcState = 2
 
         guard let op = pendingOp else {
-            // Tag discovered event — always send even if no NDEF data
             var returnVal: [String: Any] = [:]
             returnVal["k"] = "onDiscovered"
             returnVal["id"] = ""
@@ -961,10 +654,8 @@ extension NfcFtmPlugin: NFCNDEFReaderSessionDelegate {
             }
             pendingOp = nil
             result(ndefData)
-
         default:
             pendingOp = nil
-            break
         }
     }
 
@@ -997,9 +688,9 @@ extension NfcFtmPlugin: NFCNDEFReaderSessionDelegate {
     }
 }
 
-// MARK: - NFCTagReaderSessionDelegate (iOS 13+)
+// MARK: - NFCTagReaderSessionDelegate
 
-@available(iOS 13.0, *)
+@available(iOS 14.0, *)
 extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
 
     public func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {}
@@ -1043,13 +734,15 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
 
         var tagIdHex = ""
         var techList: [String] = []
+        var isoTag: NFCISO15693Tag?
 
         switch tag {
-        case .iso15693(let isoTag):
-            tagIdHex = bytesToHex(isoTag.identifier.map { $0 })
+        case .iso15693(let tag):
+            isoTag = tag
+            tagIdHex = bytesToHex(tag.identifier.map { $0 })
             techList.append("android.nfc.tech.NfcV")
-        case .iso7816(let isoTag):
-            tagIdHex = bytesToHex([UInt8](isoTag.identifier))
+        case .iso7816(let tag):
+            tagIdHex = bytesToHex([UInt8](tag.identifier))
             techList.append("android.nfc.tech.IsoDep")
         case .miFare(let mifareTag):
             tagIdHex = bytesToHex([UInt8](mifareTag.identifier))
@@ -1068,29 +761,22 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
                 return
             }
 
-            // Store tag reference
             self.mST25DVTag = tag as AnyObject
 
-            if self.isFTMmode {
-                self.initFTM()
-            }
-
-            // Handle pending operation BEFORE event dispatch (keep connection alive)
             if let op = self.pendingOp {
                 self.pendingOp = nil
                 switch op {
                 case .ndefWrite(let result, let text):
-                    if case .iso15693(let isoTag) = tag {
-                        self.writeNDEFViaNDEFTag(to: isoTag, text: text, session: session, result: result)
+                    if let iso = isoTag {
+                        self.writeNDEFViaNDEFTag(to: iso, text: text, session: session, result: result)
                     } else {
                         self.sendToastMessage(message: "Tag does not support NDEF write")
                         session.invalidate()
                         result(false)
                     }
                 case .ftmSend(let result, let cmd, let data):
-                    if case .iso15693(let isoTag) = tag {
-                        self.mFTmIsoTag = isoTag
-                        self.performFTMOperation(cmd: cmd, data: data, isoTag: isoTag, session: session, result: result)
+                    if let iso = isoTag {
+                        self.initSDKTagThenFTM(isoTag: iso, session: session, cmd: cmd, data: data, result: result)
                     } else {
                         session.invalidate()
                         result([])
@@ -1101,7 +787,6 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
                 return
             }
 
-            // No pending op — send onDiscovered event then invalidate
             var returnVal: [String: Any] = [:]
             returnVal["k"] = "onDiscovered"
             returnVal["id"] = tagIdHex

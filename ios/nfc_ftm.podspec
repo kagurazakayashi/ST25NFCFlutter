@@ -15,12 +15,23 @@ STMicroelectronics ST25 series NFC tags.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'yashi' => 'moe@yashi.moe' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
+  s.source_files = 'Classes/**/*.{h,m,swift}'
   s.dependency 'Flutter'
-  s.platform = :ios, '13.0'
+  s.frameworks = ['CoreNFC']
+  s.platform = :ios, '14.1'
+
+  s.vendored_frameworks = 'Frameworks/st25sdkFramework.framework'
+
+  s.xcconfig = {
+    'HEADER_SEARCH_PATHS' => '$(inherited) $(PODS_TARGET_SRCROOT)/Frameworks/st25sdkFramework.framework/Headers/st25sdk/** $(PODS_TARGET_SRCROOT)/Frameworks/st25sdkFramework.framework/Headers/Jre',
+  }
 
   # Flutter.framework does not contain a i386 slice.
-  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
+    'USE_HEADERMAP' => 'NO',
+  }
   s.swift_version = '5.0'
 
   # If your plugin requires a privacy manifest, for example if it uses any

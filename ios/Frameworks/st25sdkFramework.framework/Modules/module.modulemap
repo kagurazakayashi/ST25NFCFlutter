@@ -1,0 +1,6 @@
+framework module st25sdkFramework {
+  umbrella header "st25sdkFramework.h"
+  export *
+
+  module * { export * }
+}
