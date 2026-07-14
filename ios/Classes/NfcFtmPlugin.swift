@@ -130,20 +130,14 @@ class FtmMailbox {
             throw NSError(domain: "FTM", code: -4,
                 userInfo: [NSLocalizedDescriptionKey: "Mailbox message length is 0"])
         }
-        var result = Data()
-        var offset: UInt8 = 0
-        while offset < len {
-            let remaining = len - Int(offset)
-            let chunkSize = UInt8(min(remaining, Int(FtmConst.mailboxSize)))
-            let chunk = try await readMessage(offset: offset, size: chunkSize)
-            guard !chunk.isEmpty else {
-                throw NSError(domain: "FTM", code: -5,
-                    userInfo: [NSLocalizedDescriptionKey: "Invalid mailbox read response"])
-            }
-            result.append(chunk)
-            offset += UInt8(chunk.count)
+        let resp = try await readMessage(offset: 0, size: min(UInt8(len), 32))
+        if resp.isEmpty {
+            throw NSError(domain: "FTM", code: -5,
+                userInfo: [NSLocalizedDescriptionKey: "Empty mailbox response"])
         }
-        return result
+        // First byte is error code from ST25DV, skip it
+        let data = resp.count > 1 ? resp.subdata(in: 1..<resp.count) : Data()
+        return data
     }
 
     func readDynConfig(register: UInt8) async throws -> UInt8 {
@@ -256,9 +250,9 @@ class FtmTransferTask {
         let totalChunks = max((payload.count + maxPayload - 1) / maxPayload, 1)
         let totalSize = payload.count
 
-        if try await mailbox.hasHostPutMsg() {
+        if try await mailbox.hasRFPutMsg() {
             throw NSError(domain: "FTM", code: -30,
-                userInfo: [NSLocalizedDescriptionKey: "Mailbox occupied, previous message not consumed by MCU"])
+                userInfo: [NSLocalizedDescriptionKey: "Mailbox busy, RF message not consumed by MCU yet"])
         }
 
         // Step 1: Upload chunks
@@ -767,8 +761,6 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
         _ = Task { [weak self] in
             do {
-                let ctrl = try await mailbox.readDynConfig(register: 0x00)
-                self?.sendToastMessage(message: "FTM pre-flight: dynConfig[0x00]=0x\(String(ctrl, radix: 16))")
                 let response = try await task.sendCommandAndWait(cmd, data: Data(data))
                 self?.sendProgressUpdate(isTransmitted: false,
                                          tORrBytes: response.count,
