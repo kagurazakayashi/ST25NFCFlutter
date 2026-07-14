@@ -316,6 +316,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
   // MARK: 创建一个线程池，用于执行FTM发送数据任务
   private void handleFTMOperation(MethodChannel.Result result, byte cmd, byte[] data) {
+    if (executorService == null) {
+      executorService = Executors.newSingleThreadExecutor();
+    }
     executorService.submit(new Callable() {
       @Override
       public Object call() throws Exception {
