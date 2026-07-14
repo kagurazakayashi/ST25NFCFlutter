@@ -73,12 +73,14 @@ class FtmMailbox {
                                  customCommandCode: Int(StCmd.writeMessage.rawValue),
                                  customRequestParameters: params) { response, error in
                 if let error = error {
-                    cont.resume(throwing: error)
-                } else if response.first == 0x00 {
+                    let nsError = error as NSError
+                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
+                        userInfo: [NSLocalizedDescriptionKey: "WriteMsg err[\(nsError.code)]: \(nsError.localizedDescription)"]))
+                } else if response.isEmpty || response[0] == 0x00 {
                     cont.resume()
                 } else {
                     cont.resume(throwing: NSError(domain: "FTM", code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: "Write message failed: \(String(describing: response))"]))
+                        userInfo: [NSLocalizedDescriptionKey: "WriteMsg resp[0]=0x\(String(response[0], radix: 16))"]))
                 }
             }
         }
@@ -90,12 +92,14 @@ class FtmMailbox {
                                  customCommandCode: Int(StCmd.readMessageLength.rawValue),
                                  customRequestParameters: Data()) { response, error in
                 if let error = error {
-                    cont.resume(throwing: error)
-                } else if response.count >= 2 {
-                    cont.resume(returning: Int(response[1]) + 1)
+                    let nsError = error as NSError
+                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
+                        userInfo: [NSLocalizedDescriptionKey: "rdMLen err[\(nsError.code)]: \(nsError.localizedDescription)"]))
+                } else if response.count >= 1 {
+                    cont.resume(returning: Int(response[0]) + 1)
                 } else {
                     cont.resume(throwing: NSError(domain: "FTM", code: -2,
-                        userInfo: [NSLocalizedDescriptionKey: "Read message length failed"]))
+                        userInfo: [NSLocalizedDescriptionKey: "rdMLen empty resp"]))
                 }
             }
         }
@@ -107,12 +111,14 @@ class FtmMailbox {
                                  customCommandCode: Int(StCmd.readMessage.rawValue),
                                  customRequestParameters: Data([offset, size])) { response, error in
                 if let error = error {
-                    cont.resume(throwing: error)
+                    let nsError = error as NSError
+                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
+                        userInfo: [NSLocalizedDescriptionKey: "rdMsg err[\(nsError.code)]: \(nsError.localizedDescription)"]))
                 } else if !response.isEmpty {
                     cont.resume(returning: response)
                 } else {
                     cont.resume(throwing: NSError(domain: "FTM", code: -3,
-                        userInfo: [NSLocalizedDescriptionKey: "Read message failed"]))
+                        userInfo: [NSLocalizedDescriptionKey: "rdMsg empty resp"]))
                 }
             }
         }
@@ -130,13 +136,12 @@ class FtmMailbox {
             let remaining = len - Int(offset)
             let chunkSize = UInt8(min(remaining, Int(FtmConst.mailboxSize)))
             let chunk = try await readMessage(offset: offset, size: chunkSize)
-            guard chunk.count >= 2, chunk[0] == 0x00 else {
+            guard !chunk.isEmpty else {
                 throw NSError(domain: "FTM", code: -5,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid mailbox read response"])
             }
-            let payload = chunk.subdata(in: 1..<chunk.count)
-            result.append(payload)
-            offset += UInt8(chunk.count - 1)
+            result.append(chunk)
+            offset += UInt8(chunk.count)
         }
         return result
     }
@@ -147,12 +152,14 @@ class FtmMailbox {
                                  customCommandCode: Int(StCmd.readDynConfig.rawValue),
                                  customRequestParameters: Data([register])) { response, error in
                 if let error = error {
-                    cont.resume(throwing: error)
-                } else if response.count >= 2, response[0] == 0x00 {
-                    cont.resume(returning: response[1])
+                    let nsError = error as NSError
+                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
+                        userInfo: [NSLocalizedDescriptionKey: "rdCfg err[\(nsError.code)]: \(nsError.localizedDescription)"]))
+                } else if response.count >= 1 {
+                    cont.resume(returning: response[0])
                 } else {
                     cont.resume(throwing: NSError(domain: "FTM", code: -6,
-                        userInfo: [NSLocalizedDescriptionKey: "Read dyn config failed"]))
+                        userInfo: [NSLocalizedDescriptionKey: "rdCfg empty resp"]))
                 }
             }
         }
@@ -248,6 +255,11 @@ class FtmTransferTask {
         let maxPayload = FtmConst.mailboxSize - FtmConst.chainedHeaderSize
         let totalChunks = max((payload.count + maxPayload - 1) / maxPayload, 1)
         let totalSize = payload.count
+
+        if try await mailbox.hasHostPutMsg() {
+            throw NSError(domain: "FTM", code: -30,
+                userInfo: [NSLocalizedDescriptionKey: "Mailbox occupied, previous message not consumed by MCU"])
+        }
 
         // Step 1: Upload chunks
         var offset = 0
@@ -755,6 +767,8 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
         _ = Task { [weak self] in
             do {
+                let ctrl = try await mailbox.readDynConfig(register: 0x00)
+                self?.sendToastMessage(message: "FTM pre-flight: dynConfig[0x00]=0x\(String(ctrl, radix: 16))")
                 let response = try await task.sendCommandAndWait(cmd, data: Data(data))
                 self?.sendProgressUpdate(isTransmitted: false,
                                          tORrBytes: response.count,
