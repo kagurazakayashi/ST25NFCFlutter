@@ -1,6 +1,6 @@
 PODS:
   - Flutter (1.0.0)
-  - nfc_ftm (0.0.1):
+  - nfc_ftm (0.1.0):
     - Flutter
 
 DEPENDENCIES:
@@ -15,8 +15,8 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  nfc_ftm: 67b0fcbf1b2489ff45547e637fd9b65d2f5a30f4
+  nfc_ftm: ef0e6be427ad089cf830a947da6bb14b7d17b196
 
-PODFILE CHECKSUM: 4f1c12611da7338d21589c0b2ecd6bd20b109694
+PODFILE CHECKSUM: d65bdd3b8da2710999e69cdbd93b50643a6b92ea
 
 COCOAPODS: 1.16.2

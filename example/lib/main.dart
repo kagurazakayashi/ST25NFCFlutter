@@ -159,7 +159,8 @@ class _MyAppState extends State<MyApp> {
                         totalProgress = 0.0;
                         secProgress = 0.0;
                       });
-                      String data = "{\"Rd\":[[-1,-65533],[1,3],5]}";
+                      String data =
+                          "{\"Rd\":[[4,25,64375,64029,64030],[1,3],5]}";
                       print(">> payload: ${utf8.encode(data)}");
 
                       List<int> resultByte = await _nfcFtmPlugin
@@ -203,7 +204,7 @@ class _MyAppState extends State<MyApp> {
                   ? null
                   : () async {
                       _nfcFtmPlugin.readNdefTag().then((value) {
-                        if (value == null) {
+                        if (value == null || value.payload.isEmpty) {
                           BotToast.showText(
                             onlyOne: false,
                             text: "读取失败",
@@ -233,7 +234,8 @@ class _MyAppState extends State<MyApp> {
 // byte[] textBytes = text.getBytes(Charset.forName("UTF-8"));
 // byte[] languageBytes = "en".getBytes(Charset.forName("US-ASCII"));
                       // List<int> payload = [];
-                      String text = "[NDEF]测试 NFC 写入!@#dasf";
+                      String text =
+                          "[NDEF]测试NFC写入 (${DateTime.now().millisecondsSinceEpoch % 10000})";
                       List<int> payload = utf8.encode(text);
 
                       // payload.addAll([2]);

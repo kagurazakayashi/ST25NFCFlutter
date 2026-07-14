@@ -183,8 +183,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           mFtmCommands.cancelCurrentTransfer();
           mFtmCommands = null;
         }
-        openNFC(result);
-        result.success(true);
+        if (openNFC(result)) {
+          result.success(true);
+        }
         break;
       case "closeNFC":
         boolean isDone = disableReaderMode();
@@ -196,8 +197,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           mFtmCommands.cancelCurrentTransfer();
           mFtmCommands = null;
         }
-        boolean isOpenNFC = openNFC(result);
-        result.success(isOpenNFC);
+        if (openNFC(result)) {
+          result.success(true);
+        }
         break;
       case "getFTM":
         if (mST25DVTag == null) {
@@ -624,7 +626,11 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
           tagInfo.productID = PRODUCT_UNKNOWN;
         }
 
-        mST25DVTag = (ST25DVTag) tagInfo.nfcTag;
+        if (tagInfo.nfcTag instanceof ST25DVTag) {
+          mST25DVTag = (ST25DVTag) tagInfo.nfcTag;
+        } else {
+          mST25DVTag = null;
+        }
         if (isFTMmode) {
           initFTM();
         }
@@ -688,6 +694,13 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   // MARK: 从 ST25DVTag 对象中获取NDEF格式的信息
   private void readNdef(@NonNull Result result) {
     if (mST25DVTag == null) {
+      sendToastMessage("No tag available for NDEF read");
+      activity.runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          result.success(null);
+        }
+      });
       return;
     }
     // 提交任务并返回 Future 对象
@@ -699,19 +712,30 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         try {
           NDEFMsg ndefmsg = mST25DVTag.readNdefMessage();
           for (NDEFRecord record : ndefmsg.getNDEFRecords()) {
-            if (record.getPayload().length <= 3) {
+            byte[] payload = record.getPayload();
+            if (payload.length < 2) {
               continue;
             }
-            byte[] langByte = new byte[2];
-            int leng = record.getPayload().length - 3;
-            byte[] value = new byte[leng];
-            System.arraycopy(record.getPayload(), 1, langByte, 0, 2);
-            System.arraycopy(record.getPayload(), 3, value, 0, leng);
-            String lang = new String(langByte, StandardCharsets.UTF_8);
-            String payload = new String(value, StandardCharsets.UTF_8);
+            int langLen = payload[0] & 0x3F;
+            if (payload.length <= 1 + langLen) {
+              continue;
+            }
+            byte[] langByte = new byte[langLen];
+            int textLen = payload.length - 1 - langLen;
+            byte[] value = new byte[textLen];
+            System.arraycopy(payload, 1, langByte, 0, langLen);
+            System.arraycopy(payload, 1 + langLen, value, 0, textLen);
+            String lang = new String(langByte, StandardCharsets.US_ASCII);
+            boolean isUtf16 = (payload[0] & 0x80) != 0;
+            String text;
+            if (isUtf16) {
+              text = new String(value, StandardCharsets.UTF_16);
+            } else {
+              text = new String(value, StandardCharsets.UTF_8);
+            }
             ndefData.put("lang", lang);
-            ndefData.put("data", payload);
-            ndefData.put("payload", record.getPayload());
+            ndefData.put("data", text);
+            ndefData.put("payload", payload);
           }
         } catch (STException e) {
           sendToastMessage("Read NDEF message STException: " + e.getMessage());
@@ -730,9 +754,16 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     });
   }
 
-  // MARK: 从 ST25DVTag 对象中获取NDEF格式的信息
+  // MARK: 向 ST25DVTag 写入 NDEF 格式的信息
   private void writeNdef(@NonNull Result result, String data) {
     if (mST25DVTag == null) {
+      sendToastMessage("No tag available for NDEF write");
+      activity.runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          result.success(false);
+        }
+      });
       return;
     }
     // 提交任务并返回 Future 对象
@@ -743,16 +774,18 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         try {
           NDEFMsg ndefmsg = new NDEFMsg();
 
-          TextRecord ndefRecord = new TextRecord(data);
-          // NDEFRecord ndefRecord = new NDEFRecord(data);
+          TextRecord ndefRecord = new TextRecord(data, java.util.Locale.ENGLISH, true);
+
           ndefmsg.addRecord(ndefRecord);
 
           mST25DVTag.writeNdefMessage(ndefmsg);
         } catch (STException e) {
           sendToastMessage("write NDEF message STException: " + e.getMessage());
+          Log.e(TAG, "write NDEF message STException", e);
           isSuccess = false;
         } catch (Exception e) {
           sendToastMessage("write NDEF message Exception: " + e.getMessage());
+          Log.e(TAG, "write NDEF message Exception", e);
           isSuccess = false;
         }
 

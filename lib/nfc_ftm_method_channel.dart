@@ -154,11 +154,12 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }) async {
     transmissionProgress = tProgress;
     receptionProgress = rProgress;
-    final result = await methodChannel.invokeMethod<List<int>>(
-      'sendFTMData',
-      {'data': data},
-    );
-    return result ?? List<int>.empty();
+    final result = await methodChannel.invokeMethod('sendFTMData',
+        {'data': data});
+    if (result is List) {
+      return result.map<int>((e) => e is int ? e : 0).toList();
+    }
+    return List<int>.empty();
   }
 
   @override
@@ -169,11 +170,12 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }) async {
     transmissionProgress = tProgress;
     receptionProgress = rProgress;
-    final result = await methodChannel.invokeMethod<List<int>>(
-      'readFTMData',
-      {'data': data},
-    );
-    return result ?? List<int>.empty();
+    final result = await methodChannel.invokeMethod('readFTMData',
+        {'data': data});
+    if (result is List) {
+      return result.map<int>((e) => e is int ? e : 0).toList();
+    }
+    return List<int>.empty();
   }
 
   @override
