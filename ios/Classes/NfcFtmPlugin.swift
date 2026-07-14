@@ -50,7 +50,7 @@ enum FtmConst {
     static let functionBasicTransfer: UInt8 = 3
 
     static let mailboxSize           = 256
-    static let pollIntervalMs        = 80
+    static let pollIntervalMs        = 200
     static let timeoutMs             = 10000
 }
 
@@ -69,18 +69,16 @@ class FtmMailbox {
         var params = Data([sizeByte])
         params.append(data)
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            isoTag.customCommand(requestFlags: [.highDataRate],
-                                 customCommandCode: Int(StCmd.writeMessage.rawValue),
-                                 customRequestParameters: params) { response, error in
+            isoTag.customCommand(requestFlags: [],
+                                  customCommandCode: Int(StCmd.writeMessage.rawValue),
+                                  customRequestParameters: params) { response, error in
                 if let error = error {
-                    let nsError = error as NSError
-                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
-                        userInfo: [NSLocalizedDescriptionKey: "WriteMsg err[\(nsError.code)]: \(nsError.localizedDescription)"]))
-                } else if response.isEmpty || response[0] == 0x00 {
+                    cont.resume(throwing: error)
+                } else if response.first == 0x00 {
                     cont.resume()
                 } else {
                     cont.resume(throwing: NSError(domain: "FTM", code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: "WriteMsg resp[0]=0x\(String(response[0], radix: 16))"]))
+                        userInfo: [NSLocalizedDescriptionKey: "Write message failed: \(String(describing: response))"]))
                 }
             }
         }
@@ -88,18 +86,17 @@ class FtmMailbox {
 
     func readMessageLength() async throws -> Int {
         try await withCheckedThrowingContinuation { cont in
-            isoTag.customCommand(requestFlags: [.highDataRate],
-                                 customCommandCode: Int(StCmd.readMessageLength.rawValue),
-                                 customRequestParameters: Data()) { response, error in
+            isoTag.customCommand(requestFlags: [],
+                                  customCommandCode: Int(StCmd.readMessageLength.rawValue),
+                                  customRequestParameters: Data()) { response, error in
                 if let error = error {
-                    let nsError = error as NSError
-                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
-                        userInfo: [NSLocalizedDescriptionKey: "rdMLen err[\(nsError.code)]: \(nsError.localizedDescription)"]))
-                } else if response.count >= 1 {
-                    cont.resume(returning: Int(response[0]) + 1)
+                    cont.resume(throwing: error)
+                } else if response.count >= 2 {
+                    let len = Int(response[1]) + 1
+                    cont.resume(returning: len)
                 } else {
                     cont.resume(throwing: NSError(domain: "FTM", code: -2,
-                        userInfo: [NSLocalizedDescriptionKey: "rdMLen empty resp"]))
+                        userInfo: [NSLocalizedDescriptionKey: "Read message length failed"]))
                 }
             }
         }
@@ -107,18 +104,13 @@ class FtmMailbox {
 
     func readMessage(offset: UInt8, size: UInt8) async throws -> Data {
         try await withCheckedThrowingContinuation { cont in
-            isoTag.customCommand(requestFlags: [.highDataRate],
-                                 customCommandCode: Int(StCmd.readMessage.rawValue),
-                                 customRequestParameters: Data([offset, size])) { response, error in
+            isoTag.customCommand(requestFlags: [],
+                                  customCommandCode: Int(StCmd.readMessage.rawValue),
+                                  customRequestParameters: Data([offset, size])) { response, error in
                 if let error = error {
-                    let nsError = error as NSError
-                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
-                        userInfo: [NSLocalizedDescriptionKey: "rdMsg err[\(nsError.code)]: \(nsError.localizedDescription)"]))
-                } else if !response.isEmpty {
-                    cont.resume(returning: response)
+                    cont.resume(throwing: error)
                 } else {
-                    cont.resume(throwing: NSError(domain: "FTM", code: -3,
-                        userInfo: [NSLocalizedDescriptionKey: "rdMsg empty resp"]))
+                    cont.resume(returning: response)
                 }
             }
         }
@@ -130,30 +122,26 @@ class FtmMailbox {
             throw NSError(domain: "FTM", code: -4,
                 userInfo: [NSLocalizedDescriptionKey: "Mailbox message length is 0"])
         }
-        let resp = try await readMessage(offset: 0, size: min(UInt8(len), 32))
-        if resp.isEmpty {
+        let resp = try await readMessage(offset: 0, size: UInt8(min(len, FtmConst.mailboxSize)))
+        guard !resp.isEmpty, resp[0] == 0x00 else {
             throw NSError(domain: "FTM", code: -5,
-                userInfo: [NSLocalizedDescriptionKey: "Empty mailbox response"])
+                userInfo: [NSLocalizedDescriptionKey: "Empty or invalid mailbox response"])
         }
-        // First byte is error code from ST25DV, skip it
-        let data = resp.count > 1 ? resp.subdata(in: 1..<resp.count) : Data()
-        return data
+        return Data(resp.dropFirst())
     }
 
     func readDynConfig(register: UInt8) async throws -> UInt8 {
         try await withCheckedThrowingContinuation { cont in
-            isoTag.customCommand(requestFlags: [.highDataRate],
-                                 customCommandCode: Int(StCmd.readDynConfig.rawValue),
-                                 customRequestParameters: Data([register])) { response, error in
+            isoTag.customCommand(requestFlags: [],
+                                  customCommandCode: Int(StCmd.readDynConfig.rawValue),
+                                  customRequestParameters: Data([register])) { response, error in
                 if let error = error {
-                    let nsError = error as NSError
-                    cont.resume(throwing: NSError(domain: "FTM", code: nsError.code,
-                        userInfo: [NSLocalizedDescriptionKey: "rdCfg err[\(nsError.code)]: \(nsError.localizedDescription)"]))
-                } else if response.count >= 1 {
-                    cont.resume(returning: response[0])
+                    cont.resume(throwing: error)
+                } else if response.count >= 2, response[0] == 0x00 {
+                    cont.resume(returning: response[1])
                 } else {
                     cont.resume(throwing: NSError(domain: "FTM", code: -6,
-                        userInfo: [NSLocalizedDescriptionKey: "rdCfg empty resp"]))
+                        userInfo: [NSLocalizedDescriptionKey: "Read dyn config failed"]))
                 }
             }
         }
@@ -161,9 +149,9 @@ class FtmMailbox {
 
     func writeDynConfig(register: UInt8, value: UInt8) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            isoTag.customCommand(requestFlags: [.highDataRate],
-                                 customCommandCode: Int(StCmd.writeDynConfig.rawValue),
-                                 customRequestParameters: Data([register, value])) { response, error in
+            isoTag.customCommand(requestFlags: [],
+                                  customCommandCode: Int(StCmd.writeDynConfig.rawValue),
+                                  customRequestParameters: Data([register, value])) { response, error in
                 if let error = error {
                     cont.resume(throwing: error)
                 } else {
@@ -250,11 +238,6 @@ class FtmTransferTask {
         let totalChunks = max((payload.count + maxPayload - 1) / maxPayload, 1)
         let totalSize = payload.count
 
-        if try await mailbox.hasRFPutMsg() {
-            throw NSError(domain: "FTM", code: -30,
-                userInfo: [NSLocalizedDescriptionKey: "Mailbox busy, RF message not consumed by MCU yet"])
-        }
-
         // Step 1: Upload chunks
         var offset = 0
         var chunkIndex = 1
@@ -318,6 +301,9 @@ class FtmTransferTask {
     }
 
     private func waitForMailboxMessage() async throws -> Data {
+        // Give MCU time to process before first poll
+        try await Task.sleep(nanoseconds: UInt64(FtmConst.pollIntervalMs) * 1_000_000)
+
         let startTime = Date()
         while true {
             let elapsed = Date().timeIntervalSince(startTime) * 1000
@@ -331,9 +317,12 @@ class FtmTransferTask {
                     return try await mailbox.readMailboxMessage()
                 }
             } catch let err as NFCReaderError {
-                if err.errorCode == NFCReaderError.Code.readerSessionInvalidationErrorSessionTerminatedUnexpectedly.rawValue {
+                if err.errorCode == NFCReaderError.Code.readerSessionInvalidationErrorSessionTerminatedUnexpectedly.rawValue
+                    || err.errorCode == NFCReaderError.Code.readerSessionInvalidationErrorUserCanceled.rawValue
+                    || err.errorCode == NFCReaderError.Code.readerSessionInvalidationErrorSessionTimeout.rawValue {
                     throw err
                 }
+                // Retry on transceive errors (tag connection lost, etc.)
             } catch {
                 // Ignore polling errors, keep trying
             }

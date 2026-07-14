@@ -3,7 +3,7 @@
 ## Project Identity
 - **Package**: `nfc_ftm` — Flutter plugin for ST25 NFC tags with FTM (Fast Transfer Mode).
 - **Root**: The repo root **is** the plugin package. `example/` is a separate Flutter app.
-- **Platforms**: Android (primary, with ST25SDK), iOS (stub, not fully implemented).
+- **Platforms**: Android (ST25SDK JAR v1.10.0), iOS (native Swift, full FTM implementation via CoreNFC).
 
 ## Commands
 
@@ -36,7 +36,12 @@ android/
     NfcFtmPlugin.java               # 819-line native Android plugin (ST25SDK)
     ProgressListener.java           # FTM progress callback interface
 ios/
-  Classes/                          # iOS stubs (incomplete)
+  Classes/
+    NfcFtmPlugin.swift               # 1132-line native iOS plugin
+                                     #   - FtmMailbox: mailbox I/O (write/readMessage, readMessageLength)
+                                     #   - FtmTransferTask: FTM protocol engine (CRC32, chunked transfer, ACK/NACK)
+                                     #   - ProgressListener: FTM progress → EventChannel
+                                     #   - NfcFtmPlugin: full Flutter plugin (NFC sessions, NDEF, tag discovery)
 ```
 
 ## Platform Channel Details (critical)
@@ -74,4 +79,4 @@ EventChannel message types (key `k`): `onDiscovered`, `toast`, `transmissionProg
 1. **Channel names are non-standard**: `nfc_ftm_to_native` / `nfc_ftm_to_flutter`. Do not guess the default `package_name/method_name` pattern.
 2. **ST25SDK JAR is local**: The build will fail if `android/libs/` is missing the JAR. Do not modify `build.gradle` dependencies without confirming the JAR exists.
 3. **The test is broken**: Any agent writing channel tests should use `nfc_ftm_to_native`, not `nfc_ftm`.
-4. **iOS is incomplete**: Only Android has real native code. iOS has stub files only.
+4. **iOS has full FTM**: Unlike the Android side which uses ST25SDK JAR, iOS implements the entire FTM protocol natively in Swift using CoreNFC custom commands. The implementation includes CRC32, mailbox I/O, chunked protocol with ACK/NACK, and progress reporting — no external SDK framework required.
