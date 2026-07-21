@@ -3,7 +3,6 @@ import CoreNFC
 import st25sdkFramework
 
 private let ISO15693_HEADER_SIZE_UID: Int = 10
-private let ISO15693_CUSTOM_ST_HEADER_SIZE_UID: Int = 11
 
 class iOSRFReaderInterface: NSObject, ComStSt25sdkRFReaderInterface {
 
@@ -18,127 +17,204 @@ class iOSRFReaderInterface: NSObject, ComStSt25sdkRFReaderInterface {
 
     func transceive(withId obj: Any!, with commandName: String!, with data: IOSByteArray!) -> IOSByteArray! {
         let raw = data.toNSData() ?? Data()
+        let cmdStr = commandName ?? "nil"
+        let flag = Int(raw[0])
+        let cmd = Int(raw[1])
+        var reqFlags: NFCISO15693RequestFlag = []
+        if (flag & 0x20) != 0 { reqFlags.insert(.address) }
+        if (flag & 0x02) != 0 { reqFlags.insert(.highDataRate) }
+
+        let result: IOSByteArray
+
         switch commandName {
-        case "getSystemInfo":        return syncGetSystemInfo()
-        case "readSingleBlock":      return syncReadSingleBlock(raw: raw)
-        case "readMultipleBlock":    return syncReadMultipleBlock(raw: raw)
-        case "writeMsg":             return syncWriteMsg(raw: raw)
-        case "readMsgLength":        return syncCustom(cmd: 0xAB, data: Data())
-        case "readMsg":              return syncReadMsg(raw: raw)
-        case "readDynConfig":        return syncCustom(cmd: raw[1], data: Data([raw[raw.count - 1]]))
-        case "writeDynConfig":       return syncCustom(cmd: raw[1], data: Data([raw[raw.count - 2], raw[raw.count - 1]]))
-        case "readConfig":           return syncCustom(cmd: raw[1], data: raw.subdata(in: ISO15693_CUSTOM_ST_HEADER_SIZE_UID..<raw.count))
-        case "writeConfig":          return syncCustom(cmd: raw[1], data: raw.subdata(in: ISO15693_CUSTOM_ST_HEADER_SIZE_UID..<raw.count))
-        case "presentPwd":           return syncCustom(cmd: raw[1], data: raw.subdata(in: ISO15693_CUSTOM_ST_HEADER_SIZE_UID..<raw.count))
-        case "writePwd":             return syncCustom(cmd: raw[1], data: raw.subdata(in: ISO15693_CUSTOM_ST_HEADER_SIZE_UID..<raw.count))
-        default:                     return IOSByteArray(nsData: Data([0x01, 0x0F]))
+        case "getSystemInfo":
+            result = syncGetSystemInfo()
+
+        case "readSingleBlock":
+            let blockAddr = raw[ISO15693_HEADER_SIZE_UID]
+            result = syncReadSingleBlock(reqFlags: reqFlags, blockAddr: blockAddr)
+
+        case "readMultipleBlock":
+            let blockAddr = Int(raw[ISO15693_HEADER_SIZE_UID])
+            let blockCount = Int(raw[raw.count - 1])
+            result = syncReadMultipleBlock(reqFlags: reqFlags, blockAddr: blockAddr, blockCount: blockCount)
+
+        case "readSingleBlockVicinity",
+             "readMultipleBlockVicinity":
+            let body = raw.subdata(in: 2..<raw.count)
+            result = syncSendReq(flags: flag, cmd: cmd, body: body)
+
+        case "extendedGetSystemInfo",
+             "getSystemInfoVicinity":
+            result = syncGetSystemInfo()
+
+        case "readDynConfig", "readConfig", "writeDynConfig", "writeConfig",
+             "presentPwd", "writePwd", "writeMsg", "readMsg", "readMsgLength":
+            let body = raw.subdata(in: 2..<raw.count)
+            result = syncCustomCmd(reqFlags: reqFlags, cmd: cmd, body: body)
+
+        default:
+            result = IOSByteArray(nsData: Data([0x01, 0x0F]))!
         }
+
+        let respHex = (result.toNSData() ?? Data()).map { String(format: "%02X", $0) }.joined()
+        return result
     }
 
-    // MARK: - Synchronous wrappers using Task + semaphore
+    // MARK: - readSingleBlock (CoreNFC native)
 
-    private func syncGetSystemInfo() -> IOSByteArray {
+    private func syncReadSingleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: UInt8) -> IOSByteArray {
         let sem = DispatchSemaphore(value: 0)
         var result: IOSByteArray?
-        Task {
-            if let info = try? await isoTag.systemInfo(requestFlags: [.address, .highDataRate]) {
-                var resp = Data()
-                let flags: UInt8 = 0x0F
-                resp.append(flags)
-                resp.append(0x00)
-                resp.append(0x00)
-                resp.append(UInt8(info.blockSize & 0xFF))
-                resp.append(UInt8(info.totalBlocks & 0xFF))
-                resp.append(UInt8(info.icReference & 0xFF))
+        isoTag.readSingleBlock(requestFlags: reqFlags, blockNumber: blockAddr) { data, error in
+            if error != nil {
+                result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+            } else {
+                var resp = Data([0x00])
+                resp.append(data)
                 result = IOSByteArray(nsData: resp)
             }
             sem.signal()
         }
         sem.wait()
-        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))
+        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
     }
 
-    private func syncReadSingleBlock(raw: Data) -> IOSByteArray {
-        let flag = Int(raw[0])
-        let blockAddr = raw[ISO15693_HEADER_SIZE_UID]
-        var reqFlags: NFCISO15693RequestFlag = []
-        if (flag & 0x20) != 0 { reqFlags.insert(.address) }
-        if (flag & 0x02) != 0 { reqFlags.insert(.highDataRate) }
-        if (flag & 0x40) != 0 { reqFlags.insert(.option) }
+    // MARK: - readMultipleBlock (CoreNFC native)
 
+    private func syncReadMultipleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: Int, blockCount: Int) -> IOSByteArray {
         let sem = DispatchSemaphore(value: 0)
         var result: IOSByteArray?
-        Task {
-            if let data = try? await isoTag.readSingleBlock(requestFlags: reqFlags, blockNumber: blockAddr) {
-                result = IOSByteArray(nsData: Data(data))
+        isoTag.readMultipleBlocks(requestFlags: reqFlags, blockRange: NSMakeRange(blockAddr, blockCount)) { blocks, error in
+            if error != nil {
+                result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+            } else {
+                var resp = Data([0x00])
+                for b in blocks { resp.append(b) }
+                result = IOSByteArray(nsData: resp)
             }
             sem.signal()
         }
         sem.wait()
-        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))
+        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
     }
 
-    private func syncReadMultipleBlock(raw: Data) -> IOSByteArray {
-        let blockAddr = Int(raw[ISO15693_HEADER_SIZE_UID])
-        let blockCount = Int(raw[raw.count - 1])
+    // MARK: - sendRequest (for standard commands like 0x3B, 0x2B vicinity)
 
+    private func syncSendReq(flags: Int, cmd: Int, body: Data) -> IOSByteArray {
         let sem = DispatchSemaphore(value: 0)
         var result: IOSByteArray?
-        isoTag.readMultipleBlocks(requestFlags: [.address, .highDataRate], blockRange: NSMakeRange(blockAddr, blockCount)) { blocks, err in
-            if err == nil {
-                var combined = Data()
-                for block in blocks { combined.append(block) }
-                result = IOSByteArray(nsData: combined)
-            }
-            sem.signal()
-        }
-        sem.wait()
-        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))
-    }
 
-    private func syncWriteMsg(raw: Data) -> IOSByteArray {
-        let payload = raw.subdata(in: 11..<raw.count)
-        let sem = DispatchSemaphore(value: 0)
-        var result: IOSByteArray?
-        Task {
-            for _ in 0..<3 {
-                if let resp = try? await isoTag.customCommand(requestFlags: [], customCommandCode: 0xAA, customRequestParameters: payload),
-                   resp.first == 0x00 {
-                    result = IOSByteArray(nsData: Data(resp))
-                    break
+        let uidLen = 8
+        let params = body.count > uidLen ? body.subdata(in: uidLen..<body.count) : Data()
+
+        if #available(iOS 14.0, *) {
+            isoTag.sendRequest(requestFlags: flags, commandCode: cmd, data: params) { res in
+                switch res {
+                case .success((let respFlag, let response)):
+                    var respData = Data([respFlag.rawValue])
+                    if let r = response {
+                        respData.append(r)
+                    }
+                    result = IOSByteArray(nsData: respData)
+                case .failure:
+                    result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+                @unknown default:
+                    result = IOSByteArray(nsData: Data([0x01, 0x0F]))
                 }
+                sem.signal()
             }
+        } else {
+            result = IOSByteArray(nsData: Data([0x01, 0x0F]))
             sem.signal()
         }
+
         sem.wait()
-        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))
+        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
     }
 
-    private func syncReadMsg(raw: Data) -> IOSByteArray {
-        let offset = raw[raw.count - 2]
-        let size = raw[raw.count - 1]
-        return syncCustom(cmd: 0xAC, data: Data([offset, size]))
-    }
+    // MARK: - Custom command (strips SDK's UID, uses CoreNFC's)
 
-    private func syncCustom(cmd: UInt8, data: Data) -> IOSByteArray {
+    private func syncCustomCmd(reqFlags: NFCISO15693RequestFlag, cmd: Int, body: Data) -> IOSByteArray {
         let sem = DispatchSemaphore(value: 0)
         var result: IOSByteArray?
-        Task {
-            if let resp = try? await isoTag.customCommand(requestFlags: [], customCommandCode: Int(cmd), customRequestParameters: data) {
-                result = IOSByteArray(nsData: Data(resp))
+
+        let isConfigCmd = (cmd == 0xA0 || cmd == 0xA1 || cmd == 0xAD || cmd == 0xAE)
+        let isPwdCmd = (cmd == 0xB2 || cmd == 0xB3 || cmd == 0xB4 || cmd == 0xB5)
+        let isMailboxCmd = (cmd == 0xAA || cmd == 0xAC || cmd == 0xAB)
+
+        var params = Data()
+        if isMailboxCmd {
+            params = body
+        } else {
+            let hasPrefixByte = isConfigCmd || isPwdCmd
+            let uidLen = 8
+            let prefixLen = hasPrefixByte ? 1 : 0
+            let totalIncludingUid = prefixLen + uidLen
+
+            if body.count > totalIncludingUid {
+                if prefixLen > 0 {
+                    params.append(body[0])
+                }
+                params.append(body.subdata(in: totalIncludingUid..<body.count))
+            } else {
+                params = body
+            }
+        }
+
+        if #available(iOS 14.0, *) {
+            isoTag.sendRequest(requestFlags: 0x02, commandCode: cmd, data: params) { res in
+                switch res {
+                case .success((let respFlag, let response)):
+                    var respData = Data([respFlag.rawValue])
+                    if let r = response {
+                        respData.append(r)
+                    }
+                    result = IOSByteArray(nsData: respData)
+                case .failure:
+                    result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+                @unknown default:
+                    result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+                }
+                sem.signal()
+            }
+        } else {
+            result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+            sem.signal()
+        }
+        sem.wait()
+        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
+    }
+
+    // MARK: - getSystemInfo
+
+    private func syncGetSystemInfo() -> IOSByteArray {
+        let sem = DispatchSemaphore(value: 0)
+        var result: IOSByteArray?
+        isoTag.getSystemInfo(requestFlags: [.address, .highDataRate]) { dfsid, afi, blockSize, totalBlocks, icRef, error in
+            if let _ = error as? NFCReaderError {
+                result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+            } else {
+                var resp = Data([0x00, 0x0F])
+                resp.append(Data(self.isoTag.identifier))
+                resp.append(UInt8(dfsid))
+                resp.append(UInt8(afi))
+                resp.append(UInt8(min(Int(totalBlocks - 1), 255)))
+                resp.append(UInt8(blockSize & 0xFF))
+                resp.append(UInt8(icRef & 0xFF))
+                result = IOSByteArray(nsData: resp)
             }
             sem.signal()
         }
         sem.wait()
-        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))
+        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
     }
 
-    // MARK: - Required protocol stubs
+    // MARK: - Protocol stubs
 
     func decodeTagType(with uid: IOSByteArray) -> ComStSt25sdkNFCTag_NfcTagTypes {
         return ComStSt25sdkNFCTag_NfcTagTypes.NFC_TAG_TYPE_V
     }
-
     func getMaxTransmitLengthInBytes() -> jint { return 246 }
     func getMaxReceiveLengthInBytes() -> jint { return 32 }
     func getTransceiveMode() -> ComStSt25sdkRFReaderInterface_TransceiveMode! { return .NORMAL }

@@ -159,8 +159,7 @@ class _MyAppState extends State<MyApp> {
                         totalProgress = 0.0;
                         secProgress = 0.0;
                       });
-                      String data =
-                          "{\"Rd\":[[4,25,64375,64029,64030],[1,3],5]}";
+                      String data = "{\"Rd\":[[4,25,64375,64029],[1,3],5]}";
                       print(">> payload: ${utf8.encode(data)}");
 
                       List<int> resultByte = await _nfcFtmPlugin

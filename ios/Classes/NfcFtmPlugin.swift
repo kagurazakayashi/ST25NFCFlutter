@@ -4,16 +4,12 @@ import CoreNFC
 import Foundation
 import st25sdkFramework
 
-// MARK: - FTM Command Constants (matching ST25SDK FtmCommands.h)
+// MARK: - FTM Command Constants
 
 private let FTM_CMD_SEND_DATA: UInt8 = 5
 private let FTM_CMD_READ_DATA: UInt8 = 6
 
-// Header size constants (from Iso15693Protocol.h)
-private let ISO15693_HEADER_SIZE_UID: Int = 10
-private let ISO15693_CUSTOM_ST_HEADER_SIZE_UID: Int = 11
-
-// MARK: - Progress Listener (bridges SDK -> Flutter EventChannel)
+// MARK: - Progress Listener
 
 class SDKProgressListener: NSObject, ComStSt25sdkFtmprotocolFtmProtocol_TransferProgressionListener {
 
@@ -52,39 +48,22 @@ enum PendingOperation {
 
 public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
-    // MARK: - Flutter channel properties
-
     private var eventSink: FlutterEventSink?
     private var methodChannel: FlutterMethodChannel?
 
-    // MARK: - NFC State
-
     private var nfcState: Int = 0
-
     private var isFTMmode = false
-
-    // MARK: - NFC Sessions
 
     private var ndefSession: NFCNDEFReaderSession?
     private var tagSession: NFCTagReaderSession?
 
-    // MARK: - ST25SDK objects
-
     private var rfReaderInterface: iOSRFReaderInterface?
     private var st25DVTag: ComStSt25sdkType5St25dvST25DVTag?
     private var ftmCommands: ComStSt25sdkFtmprotocolFtmCommands?
-    private var mST25DVTag: AnyObject?
-
-    // MARK: - Progress listener
+    private var nfcTag: ComStSt25sdkNFCTag?
 
     private var progressListener: SDKProgressListener?
-
-    // MARK: - FTM background queue
-
     private let ftmQueue = DispatchQueue(label: "com.nfcftm.ios.ftm", qos: .userInitiated)
-
-    // MARK: - Pending operation
-
     private var pendingOp: PendingOperation?
 
     // MARK: - FlutterPlugin registration
@@ -109,30 +88,18 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
-        case "isAvailable":
-            handleIsAvailable(result)
-        case "state":
-            result(nfcState)
-        case "openNFC":
-            handleOpenNFC(result)
-        case "closeNFC":
-            handleCloseNFC(result)
-        case "openFTM":
-            handleOpenFTM(result)
-        case "getFTM":
-            handleGetFTM(result)
-        case "sendFTMData":
-            handleSendFTMData(call, result)
-        case "readFTMData":
-            handleReadFTMData(call, result)
-        case "FTMcancel":
-            handleFTMcancel(result)
-        case "NDEF@read":
-            handleNDEFRead(result)
-        case "NDEF@write":
-            handleNDEFWrite(call, result)
-        default:
-            result(FlutterMethodNotImplemented)
+        case "isAvailable": handleIsAvailable(result)
+        case "state": result(nfcState)
+        case "openNFC": handleOpenNFC(result)
+        case "closeNFC": handleCloseNFC(result)
+        case "openFTM": handleOpenFTM(result)
+        case "getFTM": handleGetFTM(result)
+        case "sendFTMData": handleSendFTMData(call, result)
+        case "readFTMData": handleReadFTMData(call, result)
+        case "FTMcancel": handleFTMcancel(result)
+        case "NDEF@read": handleNDEFRead(result)
+        case "NDEF@write": handleNDEFWrite(call, result)
+        default: result(FlutterMethodNotImplemented)
         }
     }
 
@@ -150,8 +117,12 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private func handleOpenNFC(_ result: @escaping FlutterResult) {
         isFTMmode = false
         cancelFTMTransfer()
-        nfcState = 1
-        result(true)
+        if #available(iOS 14.0, *) {
+            startTagDiscoverySession(result: result)
+        } else {
+            nfcState = 1
+            result(true)
+        }
     }
 
     private func handleCloseNFC(_ result: @escaping FlutterResult) {
@@ -161,8 +132,12 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private func handleOpenFTM(_ result: @escaping FlutterResult) {
         isFTMmode = true
         cancelFTMTransfer()
-        nfcState = 1
-        result(true)
+        if #available(iOS 14.0, *) {
+            startTagDiscoverySession(result: result)
+        } else {
+            nfcState = 1
+            result(true)
+        }
     }
 
     // MARK: - getFTM
@@ -173,8 +148,17 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(false)
             return
         }
+        if nfcState == 4 {
+            result(true)
+            return
+        }
+        if st25DVTag != nil {
+            initFTM()
+            result(nfcState == 4)
+            return
+        }
         nfcState = 3
-        result(true)
+        result(false)
     }
 
     // MARK: - sendFTMData / readFTMData
@@ -203,6 +187,11 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     private func handleFTMcancel(_ result: @escaping FlutterResult) {
         cancelFTMTransfer()
+        if #available(iOS 13.0, *) {
+            tagSession?.invalidate()
+            tagSession = nil
+        }
+        result(true)
     }
 
     // MARK: - NDEF@read / NDEF@write
@@ -224,10 +213,8 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     // MARK: - isNFCEnabled
 
     func isNFCEnabled() -> Bool {
-        if #available(iOS 11.0, *) {
-            return NFCNDEFReaderSession.readingAvailable
-        }
-        return false
+        guard #available(iOS 11.0, *) else { return false }
+        return NFCNDEFReaderSession.readingAvailable
     }
 
     // MARK: - Start NDEF Read Session
@@ -249,7 +236,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             queue: nil,
             invalidateAfterFirstRead: true
         )
-        ndefSession?.alertMessage = "将 NFC 标签靠近设备以读取。"
+        ndefSession?.alertMessage = "Hold smartphone near NFC tag"
         ndefSession?.begin()
     }
 
@@ -273,7 +260,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             delegate: self,
             queue: nil
         )
-        tagSession?.alertMessage = "将 NFC 标签靠近设备以写入。"
+        tagSession?.alertMessage = "Hold smartphone near NFC tag"
         tagSession?.begin()
     }
 
@@ -284,6 +271,32 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             sendToastMessage(message: "NDEF write requires iOS 13.0+")
             result(false)
         }
+    }
+
+    // MARK: - Start Tag Discovery Session
+
+    @available(iOS 14.0, *)
+    private func startTagDiscoverySession(result: @escaping FlutterResult) {
+        guard tagSession == nil else {
+            sendToastMessage(message: "NFC session busy, please wait")
+            result(false)
+            return
+        }
+        guard isNFCEnabled() else {
+            sendToastMessage(message: "NFC not found")
+            result(false)
+            return
+        }
+        pendingOp = .tagDiscovery
+        tagSession = NFCTagReaderSession(
+            pollingOption: [.iso15693],
+            delegate: self,
+            queue: nil
+        )
+        tagSession?.alertMessage = "Hold smartphone near NFC tag"
+        tagSession?.begin()
+        nfcState = 1
+        result(true)
     }
 
     // MARK: - Start FTM Session
@@ -306,7 +319,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             delegate: self,
             queue: nil
         )
-        tagSession?.alertMessage = "将 NFC 标签靠近设备以传输。"
+        tagSession?.alertMessage = "Hold smartphone near NFC tag"
         tagSession?.begin()
     }
 
@@ -334,7 +347,74 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         return true
     }
 
-    // MARK: - Lazy SDK init + FTM
+    // MARK: - SDK Tag Init (unified, matches Android pattern)
+
+    @available(iOS 14.0, *)
+    private func initSDKTag(
+        isoTag: NFCISO15693Tag,
+        session: NFCTagReaderSession,
+        tagIdHex: String,
+        techList: [String],
+        completion: @escaping (Bool) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            let rf = iOSRFReaderInterface(isoTag: isoTag, session: session)
+            let uidArray = IOSByteArray(nsData: Data(isoTag.identifier))
+
+            var isDVTag = false
+            var memSize: Int = 0
+            var ndefLen: Int = 0
+
+            SwiftTryCatch.try({
+                let sdkTag = ComStSt25sdkType5St25dvST25DVTag(
+                    comStSt25sdkRFReaderInterface: rf,
+                    with: uidArray
+                )
+                self.rfReaderInterface = rf
+                self.st25DVTag = sdkTag
+                self.nfcTag = sdkTag
+                self.nfcState = 3
+                isDVTag = true
+
+                memSize = Int(sdkTag.getMemSizeInBytes())
+                if let ndefMsg = sdkTag.readNdefMessage() {
+                    ndefLen = Int(ndefMsg.getLength())
+                }
+            }, catch: { ex in
+                let msg = ex.description
+                if !msg.contains("CMD_FAILED") {
+                    print("[FTM] initSDKTag exception: \(msg)")
+                }
+            }, finallyBlock: {})
+
+            if !isDVTag {
+                self.st25DVTag = nil
+                self.nfcTag = nil
+                self.nfcState = 2
+            }
+
+            if self.isFTMmode && self.st25DVTag != nil {
+                self.initFTM()
+            }
+
+            var returnVal: [String: Any] = [:]
+            returnVal["k"] = "onDiscovered"
+            returnVal["id"] = tagIdHex
+            returnVal["type"] = "[\(techList.joined(separator: ", "))]"
+            returnVal["memSize"] = memSize
+            returnVal["ndefLength"] = ndefLen
+
+            DispatchQueue.main.async { [weak self] in
+                self?.eventSink?(returnVal)
+            }
+            session.invalidate()
+            completion(isDVTag)
+        }
+    }
+
+    // MARK: - SDK Init + FTM Operation
 
     @available(iOS 14.0, *)
     private func initSDKTagThenFTM(
@@ -344,7 +424,6 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         data: [UInt8],
         result: @escaping FlutterResult
     ) {
-        // Run SDK init on background queue to avoid deadlocking the NFC delegate queue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
@@ -375,11 +454,34 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 return
             }
 
-            self.performFTMOperation(cmd: cmd, data: data, isoTag: isoTag, session: session, result: result)
+            if self.ftmCommands != nil {
+                self.performFTMOperation(cmd: cmd, data: data, isoTag: isoTag, session: session, result: result)
+            } else {
+                session.invalidate()
+                DispatchQueue.main.async { result([]) }
+            }
         }
     }
 
-    // MARK: - initFTM (SDK-based)
+    // MARK: - ST25DV Product Check
+
+    private func isST25DVProduct(_ productID: ComStSt25sdkTagHelper_ProductID?) -> Bool {
+        guard let pid = productID else { return false }
+        switch pid {
+        case .PRODUCT_ST_ST25DV04K_I, .PRODUCT_ST_ST25DV04K_J,
+             .PRODUCT_ST_ST25DV16K_I, .PRODUCT_ST_ST25DV16K_J,
+             .PRODUCT_ST_ST25DV64K_I, .PRODUCT_ST_ST25DV64K_J,
+             .PRODUCT_ST_ST25DV04KC_I, .PRODUCT_ST_ST25DV04KC_J,
+             .PRODUCT_ST_ST25DV16KC_I, .PRODUCT_ST_ST25DV16KC_J,
+             .PRODUCT_ST_ST25DV64KC_I, .PRODUCT_ST_ST25DV64KC_J,
+             .PRODUCT_ST_ST25DV02K_W1, .PRODUCT_ST_ST25DV02K_W2:
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: - initFTM
 
     func initFTM() {
         guard let tag = st25DVTag else {
@@ -414,7 +516,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         nfcState = 4
     }
 
-    // MARK: - cancelFTMTransfer (SDK-based)
+    // MARK: - cancelFTMTransfer
 
     func cancelFTMTransfer() {
         if let cmds = ftmCommands {
@@ -427,7 +529,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         rfReaderInterface = nil
     }
 
-    // MARK: - FTM Operations (SDK-based, using sendCmdAndWaitForCompletion)
+    // MARK: - FTM Operations
 
     @available(iOS 14.0, *)
     private func performFTMOperation(
@@ -452,7 +554,6 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
             SwiftTryCatch.try({
                 let dataArray = IOSByteArray(nsData: Data(data))
-
                 responseData = cmds.sendCmdAndWaitForCompletion(
                     withByte: jbyte(cmd),
                     with: dataArray,
@@ -465,9 +566,8 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 exception = ex
             }, finallyBlock: {})
 
-            session.invalidate()
-
             DispatchQueue.main.async {
+                session.invalidate()
                 if let ex = exception {
                     self?.sendToastMessage(message: "FTM error: \(ex.description)")
                     result([])
@@ -532,18 +632,16 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(false)
             return
         }
-        let textPayload = buildUTF8TextNDEFPayload(text: text)
-        let payload = NFCNDEFPayload(
-            format: .nfcWellKnown,
-            type: Data([0x54]),
-            identifier: Data(),
-            payload: textPayload
-        )
-        let message = NFCNDEFMessage(records: [payload])
-        ndefTag.writeNDEF(message) { writeError in
+        guard let ndefMessage = buildTextNDEFMessage(text: text) else {
+            sendToastMessage(message: "Failed to build NDEF message")
+            session.invalidate()
+            result(false)
+            return
+        }
+        ndefTag.writeNDEF(ndefMessage) { writeError in
             if let nfcError = writeError as? NFCReaderError,
                nfcError.code == .ndefReaderSessionErrorZeroLengthMessage {
-                self.sendToastMessage(message: "写入成功")
+                self.sendToastMessage(message: "write NDEF success")
                 session.invalidate()
                 result(true)
                 return
@@ -554,22 +652,23 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 result(false)
                 return
             }
-            self.sendToastMessage(message: "写入成功")
+            self.sendToastMessage(message: "write NDEF success")
             session.invalidate()
             result(true)
         }
     }
 
-    private func buildUTF8TextNDEFPayload(text: String, lang: String = "en") -> Data {
-        let statusByte: UInt8 = UInt8(lang.count)
-        guard let langData = lang.data(using: .ascii),
-              let textData = text.data(using: .utf8)
-        else { return Data() }
-        var payload = Data()
-        payload.append(statusByte)
-        payload.append(langData)
-        payload.append(textData)
-        return payload
+    private func buildTextNDEFMessage(text: String, lang: String = "en") -> NFCNDEFMessage? {
+        let locale = JavaUtilLocale(nsString: lang)
+        let sdkRecord = ComStSt25sdkNdefTextRecord(
+            nsString: text,
+            with: locale,
+            withBoolean: true
+        )
+        let sdkMsg = ComStSt25sdkNdefNDEFMsg()
+        sdkMsg.addRecord(with: sdkRecord)
+        guard let serialized = sdkMsg.serialize()?.toNSData() else { return nil }
+        return try? NFCNDEFMessage(data: serialized)
     }
 
     // MARK: - Toast Message
@@ -667,12 +766,12 @@ extension NfcFtmPlugin: NFCNDEFReaderSessionDelegate {
             switch nfcError.code {
             case .readerSessionInvalidationErrorUserCanceled:
                 if pendingOp != nil {
-                    sendToastMessage(message: "用户取消了 NFC 读取。")
+                    sendToastMessage(message: "NFC read cancelled.")
                 }
             case .readerSessionInvalidationErrorFirstNDEFTagRead:
                 break
             default:
-                sendToastMessage(message: "NFC 错误：\(error.localizedDescription)")
+                sendToastMessage(message: "NFC error: \(error.localizedDescription)")
             }
         }
         if let op = pendingOp {
@@ -703,12 +802,12 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
             switch nfcError.code {
             case .readerSessionInvalidationErrorUserCanceled:
                 if pendingOp != nil {
-                    sendToastMessage(message: "用户取消了 NFC 读取。")
+                    sendToastMessage(message: "NFC read cancelled.")
                 }
             case .readerSessionInvalidationErrorSessionTerminatedUnexpectedly:
                 break
             default:
-                sendToastMessage(message: "NFC 错误：\(error.localizedDescription)")
+                sendToastMessage(message: "NFC error: \(error.localizedDescription)")
             }
         }
         if let op = pendingOp {
@@ -761,8 +860,6 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
                 return
             }
 
-            self.mST25DVTag = tag as AnyObject
-
             if let op = self.pendingOp {
                 self.pendingOp = nil
                 switch op {
@@ -774,6 +871,7 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
                         session.invalidate()
                         result(false)
                     }
+                    return
                 case .ftmSend(let result, let cmd, let data):
                     if let iso = isoTag {
                         self.initSDKTagThenFTM(isoTag: iso, session: session, cmd: cmd, data: data, result: result)
@@ -781,9 +879,17 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
                         session.invalidate()
                         result([])
                     }
+                    return
+                case .tagDiscovery:
+                    break
                 default:
                     session.invalidate()
+                    return
                 }
+            }
+
+            if self.isFTMmode, let iso = isoTag {
+                self.initSDKTag(isoTag: iso, session: session, tagIdHex: tagIdHex, techList: techList) { _ in }
                 return
             }
 
