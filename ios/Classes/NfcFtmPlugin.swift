@@ -66,6 +66,9 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private let ftmQueue = DispatchQueue(label: "com.nfcftm.ios.ftm", qos: .userInitiated)
     private var pendingOp: PendingOperation?
 
+    private var lastTagIdHex: String = ""
+    private var lastTechList: [String] = []
+
     // MARK: - FlutterPlugin registration
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -145,19 +148,23 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private func handleGetFTM(_ result: @escaping FlutterResult) {
         guard isFTMmode else {
             nfcState = 3
+            sendTagInfoEvent()
             result(false)
             return
         }
         if nfcState == 4 {
+            sendTagInfoEvent()
             result(true)
             return
         }
         if st25DVTag != nil {
             initFTM()
+            sendTagInfoEvent()
             result(nfcState == 4)
             return
         }
         nfcState = 3
+        sendTagInfoEvent()
         result(false)
     }
 
@@ -357,10 +364,13 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         techList: [String],
         completion: @escaping (Bool) -> Void
     ) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+             guard let self = self else { return }
 
-            let rf = iOSRFReaderInterface(isoTag: isoTag, session: session)
+             self.lastTagIdHex = tagIdHex
+             self.lastTechList = techList
+
+             let rf = iOSRFReaderInterface(isoTag: isoTag, session: session)
             let uidArray = IOSByteArray(nsData: Data(isoTag.identifier))
 
              var isDVTag = false
@@ -598,12 +608,14 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 session.invalidate()
                 if let ex = exception {
                     self?.sendToastMessage(message: "FTM error: \(ex.description)")
+                    self?.sendTagInfoEvent()
                     result([])
                     return
                 }
 
                 guard let resp = responseData else {
                     self?.sendToastMessage(message: "FTM error: no response")
+                    self?.sendTagInfoEvent()
                     result([])
                     return
                 }
@@ -613,6 +625,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                                          tORrBytes: response.count,
                                          acknowledgedBytes: response.count,
                                          totalSize: response.count)
+                self?.sendTagInfoEvent()
                 result([UInt8](response))
             }
         }
@@ -670,17 +683,20 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             if let nfcError = writeError as? NFCReaderError,
                nfcError.code == .ndefReaderSessionErrorZeroLengthMessage {
                 self.sendToastMessage(message: "write NDEF success")
+                self.sendTagInfoEvent()
                 session.invalidate()
                 result(true)
                 return
             }
             if let writeError = writeError {
                 self.sendToastMessage(message: "write NDEF error: \(writeError.localizedDescription)")
+                self.sendTagInfoEvent()
                 session.invalidate()
                 result(false)
                 return
             }
             self.sendToastMessage(message: "write NDEF success")
+            self.sendTagInfoEvent()
             session.invalidate()
             result(true)
         }
@@ -746,8 +762,11 @@ extension NfcFtmPlugin: NFCNDEFReaderSessionDelegate {
         nfcState = 2
 
         guard let op = pendingOp else {
-            var returnVal: [String: Any] = [:]
-            returnVal["k"] = "onDiscovered"
+            self.lastTagIdHex = tagIdHex
+            self.lastTechList = techList
+
+             var returnVal: [String: Any] = [:]
+             returnVal["k"] = "onDiscovered"
             returnVal["id"] = ""
             returnVal["type"] = "[]"
             returnVal["memSize"] = 0
@@ -780,6 +799,7 @@ extension NfcFtmPlugin: NFCNDEFReaderSessionDelegate {
                 }
             }
             pendingOp = nil
+            sendTagInfoEvent()
             result(ndefData)
         default:
             pendingOp = nil
@@ -878,6 +898,9 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
             break
         }
 
+        lastTagIdHex = tagIdHex
+        lastTechList = techList
+
         session.connect(to: tag) { [weak self] error in
             guard let self = self else { return }
 
@@ -917,9 +940,14 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
             }
 
             if self.isFTMmode, let iso = isoTag {
+                self.lastTagIdHex = tagIdHex
+                self.lastTechList = techList
                 self.initSDKTag(isoTag: iso, session: session, tagIdHex: tagIdHex, techList: techList) { _ in }
                 return
             }
+
+            self.lastTagIdHex = tagIdHex
+            self.lastTechList = techList
 
              var returnVal: [String: Any] = [:]
              returnVal["k"] = "onDiscovered"
@@ -932,6 +960,38 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
                 self?.eventSink?(returnVal)
             }
             session.invalidate()
+        }
+    }
+
+    // MARK: - sendTagInfoEvent
+
+    private func sendTagInfoEvent() {
+        guard let sink = eventSink else { return }
+
+        var mailboxEnabled = false
+        var memSize: Int = 0
+        var ndefLen: Int = 0
+
+        if let tag = st25DVTag {
+            SwiftTryCatch.try({
+                mailboxEnabled = tag.isMailboxEnabled(withBoolean: true)
+                memSize = Int(tag.getMemSizeInBytes())
+                if let ndefMsg = tag.readNdefMessage() {
+                    ndefLen = Int(ndefMsg.getLength())
+                }
+            }, catch: { _ in }, finallyBlock: {})
+        }
+
+        var returnVal: [String: Any] = [:]
+        returnVal["k"] = "onDiscovered"
+        returnVal["id"] = lastTagIdHex
+        returnVal["type"] = "[\(lastTechList.joined(separator: ", "))]"
+        returnVal["memSize"] = memSize
+        returnVal["ndefLength"] = ndefLen
+        returnVal["isFTMmode"] = isFTMmode && st25DVTag != nil && mailboxEnabled
+
+        DispatchQueue.main.async {
+            sink(returnVal)
         }
     }
 

@@ -137,6 +137,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   boolean isTDone = false;
   boolean isRDone = false;
 
+  private String mLastTagId = "";
+  private String mLastTagType = "";
+
   // NFC 状态
   // -1: 未找到 NFC
   // 0: 未开启 NFC
@@ -203,10 +206,12 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         break;
       case "getFTM":
         if (mST25DVTag == null) {
+          sendTagInfoEvent();
           result.success(false);
           return;
         }
         initFTM();
+        sendTagInfoEvent();
         result.success(true);
         break;
       case "sendFTMData":
@@ -336,6 +341,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         activity.runOnUiThread(new Runnable() {
           @Override
           public void run() {
+            sendTagInfoEvent();
             result.success(finalResponseData);
           }
         });
@@ -353,6 +359,42 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       @Override
       public void run() {
         eventChannelSink.success(messageMap);
+      }
+    });
+  }
+
+  // MARK: 发送当前 NFC 标签信息
+  private void sendTagInfoEvent() {
+    if (eventChannelSink == null) return;
+
+    Map<String, Object> returnVal = new HashMap<>();
+    returnVal.put("k", "onDiscovered");
+    returnVal.put("id", mLastTagId);
+    returnVal.put("type", mLastTagType);
+
+    boolean mailboxEnabled = false;
+    int memSize = 0;
+    int ndefLen = 0;
+
+    if (mST25DVTag != null) {
+      try {
+        mailboxEnabled = mST25DVTag.isMailboxEnabled(true);
+        memSize = mST25DVTag.getMemSizeInBytes();
+        NDEFMsg ndefmsg = mST25DVTag.readNdefMessage();
+        ndefLen = ndefmsg.getLength();
+      } catch (STException e) {
+      } catch (Exception e) {
+      }
+    }
+
+    returnVal.put("memSize", memSize);
+    returnVal.put("ndefLength", ndefLen);
+    returnVal.put("isFTMmode", isFTMmode && mST25DVTag != null && mailboxEnabled);
+
+    activity.runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        eventChannelSink.success(returnVal);
       }
     });
   }
@@ -440,6 +482,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         Map<String, Object> returnVal = new HashMap<>();
         // mandroidTag = tag;
         AndroidReaderInterface readerInterface = AndroidReaderInterface.newInstance(tag);
+
+        mLastTagId = androidTagIdHex;
+        mLastTagType = Arrays.toString(tag.getTechList());
 
         TagInfo tagInfo = new TagInfo();
         tagInfo.nfcTag = null;
@@ -661,8 +706,8 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
         returnVal.put("k", "onDiscovered");
 
-        returnVal.put("id", androidTagIdHex);
-        returnVal.put("type", Arrays.toString(tag.getTechList()));
+        returnVal.put("id", mLastTagId);
+        returnVal.put("type", mLastTagType);
         returnVal.put("memSize", memSize);
         returnVal.put("ndefLength", ndefLen);
         returnVal.put("isFTMmode", isFTMmode && mST25DVTag != null && mailboxEnabled);
@@ -759,6 +804,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         activity.runOnUiThread(new Runnable() {
           @Override
           public void run() {
+            sendTagInfoEvent();
             result.success(ndefData);
           }
         });
@@ -806,13 +852,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         activity.runOnUiThread(new Runnable() {
           @Override
           public void run() {
+            sendTagInfoEvent();
             result.success(finalIsSuccess);
           }
-        });
-        return null;
-      }
-    });
-  }
 
   // MARK: 把进度数据转发给 Flutter
   public void updateProgress(boolean isTransmitted, int tORrBytes, int acknowledgedBytes, int totalSize) {
