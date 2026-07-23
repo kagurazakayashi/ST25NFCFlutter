@@ -76,6 +76,7 @@ but also after each operation completes (`getFTM`, `sendFTMData`, `readFTMData`,
 NfcTag? currentTag;
 
 // Open NFC in FTM mode — discovers ST25DV tags and initializes FTM
+// alertMessage (iOS only): customizes the NFC system dialog text
 await nfcFtm.openFTM((NfcTag tag) {
   currentTag = tag;
 
@@ -119,6 +120,8 @@ await nfcFtm.closeNFC();
 ### FTM Data Transfer
 
 > **Note**: FTM requires an **ST25DV-I2C** or **ST25DV-PWM** tag with mailbox support. Other tag types will report `NO_FTM_MODE`.
+
+> **Note (iOS only)**: `alertMessage` parameter customizes the NFC system dialog text. Defaults to `"Hold smartphone near NFC tag"` when not specified.
 
 ```dart
 // Send data via FTM and receive response
@@ -176,15 +179,15 @@ nfcFtm.getToastStream().listen((message) {
 |--------|---------|-------------|
 | `isAvailable()` | `Future<bool>` | Check if NFC hardware is available |
 | `getNfcState()` | `Future<NfcState>` | Get current NFC state |
-| `openNFC(onDiscovered)` | `Future<bool>` | Start NFC session (NDEF mode). Callback fires on tag discovery and after each NDEF/FTM operation with current tag info. |
-| `openFTM(onDiscovered)` | `Future<bool>` | Start NFC session (FTM mode). Callback fires on tag discovery and after each NDEF/FTM operation with current tag info, including `isFTMmode`. |
+| `openNFC(onDiscovered, {alertMessage})` | `Future<bool>` | Start NFC session (NDEF mode). Callback fires on tag discovery and after each NDEF/FTM operation with current tag info. `alertMessage` customizes NFC dialog text (iOS only). |
+| `openFTM(onDiscovered, {alertMessage})` | `Future<bool>` | Start NFC session (FTM mode). Callback fires on tag discovery and after each NDEF/FTM operation with current tag info, including `isFTMmode`. `alertMessage` customizes NFC dialog text (iOS only). |
 | `closeNFC()` | `Future<bool>` | Close current NFC session |
 | `getFTM()` | `Future<bool>` | Initialize FTM commands. Returns `true` when FTM ready |
-| `sendFTMData(data, {tx, rx})` | `Future<List<int>>` | Send data via FTM, returns tag response |
-| `readFTMData(data)` | `Future<List<int>>` | Read data from tag via FTM |
+| `sendFTMData(data, {tx, rx, alertMessage})` | `Future<List<int>>` | Send data via FTM, returns tag response. `alertMessage` (iOS only). |
+| `readFTMData(data, {tProgress, rProgress, alertMessage})` | `Future<List<int>>` | Read data from tag via FTM. `alertMessage` (iOS only). |
 | `cancelTransfer()` | `void` | Cancel ongoing FTM transfer |
-| `readNdefTag()` | `Future<NdefTag?>` | Read NDEF text message from tag |
-| `writeNdefTag(text)` | `Future<bool>` | Write NDEF text record to tag |
+| `readNdefTag({alertMessage})` | `Future<NdefTag?>` | Read NDEF text message from tag. `alertMessage` (iOS only). |
+| `writeNdefTag(text, {alertMessage})` | `Future<bool>` | Write NDEF text record to tag. `alertMessage` (iOS only). |
 | `getToastStream()` | `Stream<String>` | Status message stream |
 | `dispose()` | `Future<void>` | Clean up resources |
 
