@@ -33,12 +33,29 @@ class NfcTag {
     required this.type,
     this.memSize,
     this.tagNDEFLength,
+    this.ndefText,
+    this.ndefLang,
+    this.ndefPayload,
+    this.isFTMmode,
   });
 
   final String id;
   final List<String> type;
   final int? memSize;
   final int? tagNDEFLength;
+  final String? ndefText;
+  final String? ndefLang;
+  final List<int>? ndefPayload;
+  final bool? isFTMmode;
+
+  NdefTag? get ndefTag {
+    if (ndefText == null || ndefText!.isEmpty) return null;
+    return NdefTag(
+      language: ndefLang ?? "",
+      data: ndefText!,
+      payload: ndefPayload ?? [],
+    );
+  }
 
   Map<String, Object?> toJson() {
     return {
@@ -46,6 +63,7 @@ class NfcTag {
       'type': type.join(", "),
       'memSize': memSize,
       'tagNDEFLength': tagNDEFLength,
+      'isFTMmode': isFTMmode,
     };
   }
 
@@ -57,12 +75,13 @@ class NfcTag {
           .split(", ")
           .toList(),
       memSize: map['memSize'] as int?,
+      isFTMmode: map['isFTMmode'] as bool?,
     );
   }
 
   @override
   String toString() {
-    return '{id: $id, type: $type, memSize: $memSize, tagNDEFLength: $tagNDEFLength}';
+    return '{id: $id, type: $type, memSize: $memSize, tagNDEFLength: $tagNDEFLength, isFTMmode: $isFTMmode}';
   }
 }
 

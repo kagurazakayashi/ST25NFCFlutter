@@ -634,7 +634,16 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         } else {
           mST25DVTag = null;
         }
-        if (isFTMmode) {
+        boolean mailboxEnabled = false;
+
+        if (mST25DVTag != null) {
+          try {
+            mailboxEnabled = mST25DVTag.isMailboxEnabled(true);
+          } catch (STException e) {
+          }
+        }
+
+        if (isFTMmode && mailboxEnabled) {
           initFTM();
         }
         int memSize = 0;
@@ -656,6 +665,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         returnVal.put("type", Arrays.toString(tag.getTechList()));
         returnVal.put("memSize", memSize);
         returnVal.put("ndefLength", ndefLen);
+        returnVal.put("isFTMmode", isFTMmode && mST25DVTag != null && mailboxEnabled);
 
         activity.runOnUiThread(new Runnable() {
           public void run() {

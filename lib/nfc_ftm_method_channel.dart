@@ -262,10 +262,15 @@ NfcTag $GetNfcTag(Map<String, Object> map) {
       .substring(1, techListString.length - 1) // 去除两边的方括号
       .split(", ") // 按逗号分隔
       .toList();
+  Map<Object?, Object?>? ndefMap = map['ndef'] as Map<Object?, Object?>?;
   return NfcTag(
     id: map['id'] as String,
     type: techList,
     memSize: map['memSize'] as int?,
     tagNDEFLength: map['ndefLength'] as int?,
+    ndefText: ndefMap?['data'] as String?,
+    ndefLang: ndefMap?['lang'] as String?,
+    ndefPayload: ndefMap?['payload'] is List ? List<int>.from(ndefMap!['payload'] as List) : null,
+    isFTMmode: map['isFTMmode'] as bool?,
   );
 }

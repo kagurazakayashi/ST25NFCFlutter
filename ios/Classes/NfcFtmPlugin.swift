@@ -363,50 +363,78 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             let rf = iOSRFReaderInterface(isoTag: isoTag, session: session)
             let uidArray = IOSByteArray(nsData: Data(isoTag.identifier))
 
-            var isDVTag = false
-            var memSize: Int = 0
-            var ndefLen: Int = 0
+             var isDVTag = false
+             var isMailboxEnabled = false
+             var memSize: Int = 0
+             var ndefLen: Int = 0
+             var ndefLang: String = ""
+             var ndefText: String = ""
+             var ndefPayload: FlutterStandardTypedData = FlutterStandardTypedData(bytes: Data())
 
-            SwiftTryCatch.try({
-                let sdkTag = ComStSt25sdkType5St25dvST25DVTag(
-                    comStSt25sdkRFReaderInterface: rf,
-                    with: uidArray
-                )
-                self.rfReaderInterface = rf
-                self.st25DVTag = sdkTag
-                self.nfcTag = sdkTag
-                self.nfcState = 3
-                isDVTag = true
+             SwiftTryCatch.try({
+                 let sdkTag = ComStSt25sdkType5St25dvST25DVTag(
+                     comStSt25sdkRFReaderInterface: rf,
+                     with: uidArray
+                 )
+                 self.rfReaderInterface = rf
+                 self.st25DVTag = sdkTag
+                 self.nfcTag = sdkTag
+                 self.nfcState = 3
+                 isDVTag = true
 
-                memSize = Int(sdkTag.getMemSizeInBytes())
-                if let ndefMsg = sdkTag.readNdefMessage() {
-                    ndefLen = Int(ndefMsg.getLength())
-                }
-            }, catch: { ex in
-                let msg = ex.description
-                if !msg.contains("CMD_FAILED") {
-                    print("[FTM] initSDKTag exception: \(msg)")
-                }
-            }, finallyBlock: {})
+                 memSize = Int(sdkTag.getMemSizeInBytes())
+                 if let ndefMsg = sdkTag.readNdefMessage() {
+                     ndefLen = Int(ndefMsg.getLength())
+                     if let serialized = ndefMsg.serialize()?.toNSData(),
+                        let nfcMsg = try? NFCNDEFMessage(data: serialized) {
+                         if let parsed = iOSNdef.parseTextFromNDEF(nfcMsg) {
+                             ndefLang = parsed.lang
+                             ndefText = parsed.text
+                             ndefPayload = FlutterStandardTypedData(bytes: parsed.payload)
+                         }
+                     }
+                 }
+             }, catch: { ex in
+                 let msg = ex.description
+                 if !msg.contains("CMD_FAILED") {
+                     print("[FTM] initSDKTag exception: \(msg)")
+                 }
+             }, finallyBlock: {})
 
-            if !isDVTag {
-                self.st25DVTag = nil
-                self.nfcTag = nil
-                self.nfcState = 2
+             if isDVTag, let tag = self.st25DVTag {
+                 SwiftTryCatch.try({
+                  isMailboxEnabled = tag.isMailboxEnabled(withBoolean: true)
+              }, catch: { _ in
+              }, finallyBlock: {})
+             }
+
+             if !isDVTag {
+                 self.st25DVTag = nil
+                 self.nfcTag = nil
+                 self.nfcState = 2
+             }
+
+             if self.isFTMmode && self.st25DVTag != nil && isMailboxEnabled {
+                 self.initFTM()
+             }
+
+             var ndefData: [String: Any] = [:]
+            if ndefLen > 0 {
+                ndefData["lang"] = ndefLang
+                ndefData["data"] = ndefText
+                ndefData["payload"] = ndefPayload
             }
 
-            if self.isFTMmode && self.st25DVTag != nil {
-                self.initFTM()
-            }
+             var returnVal: [String: Any] = [:]
+             returnVal["k"] = "onDiscovered"
+             returnVal["id"] = tagIdHex
+             returnVal["type"] = "[\(techList.joined(separator: ", "))]"
+             returnVal["memSize"] = memSize
+             returnVal["ndefLength"] = ndefLen
+             returnVal["ndef"] = ndefData
+             returnVal["isFTMmode"] = isFTMmode && isDVTag && isMailboxEnabled
 
-            var returnVal: [String: Any] = [:]
-            returnVal["k"] = "onDiscovered"
-            returnVal["id"] = tagIdHex
-            returnVal["type"] = "[\(techList.joined(separator: ", "))]"
-            returnVal["memSize"] = memSize
-            returnVal["ndefLength"] = ndefLen
-
-            DispatchQueue.main.async { [weak self] in
+             DispatchQueue.main.async { [weak self] in
                 self?.eventSink?(returnVal)
             }
             session.invalidate()
@@ -498,10 +526,10 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }, catch: { ex in
             exception = ex
         }, finallyBlock: {})
-
         if let ex = exception {
             sendToastMessage(message: "initFTM error: \(ex.description)")
             nfcState = 3
+
             return
         }
 
@@ -893,13 +921,14 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
                 return
             }
 
-            var returnVal: [String: Any] = [:]
-            returnVal["k"] = "onDiscovered"
-            returnVal["id"] = tagIdHex
-            returnVal["type"] = "[\(techList.joined(separator: ", "))]"
-            returnVal["memSize"] = 0
-            returnVal["ndefLength"] = 0
-            DispatchQueue.main.async { [weak self] in
+             var returnVal: [String: Any] = [:]
+             returnVal["k"] = "onDiscovered"
+             returnVal["id"] = tagIdHex
+             returnVal["type"] = "[\(techList.joined(separator: ", "))]"
+             returnVal["memSize"] = 0
+             returnVal["ndefLength"] = 0
+             returnVal["isFTMmode"] = false
+             DispatchQueue.main.async { [weak self] in
                 self?.eventSink?(returnVal)
             }
             session.invalidate()
