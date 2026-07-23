@@ -139,6 +139,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
   private String mLastTagId = "";
   private String mLastTagType = "";
+  private boolean mLastMailboxEnabled = false;
+  private int mLastMemSize = 0;
+  private int mLastNdefLen = 0;
 
   // NFC 状态
   // -1: 未找到 NFC
@@ -371,25 +374,9 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     returnVal.put("k", "onDiscovered");
     returnVal.put("id", mLastTagId);
     returnVal.put("type", mLastTagType);
-
-    boolean mailboxEnabled = false;
-    int memSize = 0;
-    int ndefLen = 0;
-
-    if (mST25DVTag != null) {
-      try {
-        mailboxEnabled = mST25DVTag.isMailboxEnabled(true);
-        memSize = mST25DVTag.getMemSizeInBytes();
-        NDEFMsg ndefmsg = mST25DVTag.readNdefMessage();
-        ndefLen = ndefmsg.getLength();
-      } catch (STException e) {
-      } catch (Exception e) {
-      }
-    }
-
-    returnVal.put("memSize", memSize);
-    returnVal.put("ndefLength", ndefLen);
-    returnVal.put("isFTMmode", isFTMmode && mST25DVTag != null && mailboxEnabled);
+    returnVal.put("memSize", mLastMemSize);
+    returnVal.put("ndefLength", mLastNdefLen);
+    returnVal.put("isFTMmode", isFTMmode && mST25DVTag != null && mLastMailboxEnabled);
 
     activity.runOnUiThread(new Runnable() {
       @Override
@@ -711,6 +698,10 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         returnVal.put("memSize", memSize);
         returnVal.put("ndefLength", ndefLen);
         returnVal.put("isFTMmode", isFTMmode && mST25DVTag != null && mailboxEnabled);
+
+        mLastMailboxEnabled = mailboxEnabled;
+        mLastMemSize = memSize;
+        mLastNdefLen = ndefLen;
 
         activity.runOnUiThread(new Runnable() {
           public void run() {

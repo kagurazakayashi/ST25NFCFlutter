@@ -68,6 +68,9 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     private var lastTagIdHex: String = ""
     private var lastTechList: [String] = []
+    private var lastMailboxEnabled: Bool = false
+    private var lastMemSize: Int = 0
+    private var lastNdefLen: Int = 0
 
     // MARK: - FlutterPlugin registration
 
@@ -416,7 +419,10 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                   isMailboxEnabled = tag.isMailboxEnabled(withBoolean: true)
               }, catch: { _ in
               }, finallyBlock: {})
-             }
+              }
+              self.lastMailboxEnabled = isMailboxEnabled
+              self.lastMemSize = memSize
+              self.lastNdefLen = ndefLen
 
              if !isDVTag {
                  self.st25DVTag = nil
@@ -474,23 +480,37 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     comStSt25sdkRFReaderInterface: rf,
                     with: uidArray
                 )
-                self.rfReaderInterface = rf
-                self.st25DVTag = sdkTag
+                 self.rfReaderInterface = rf
+                 self.st25DVTag = sdkTag
 
-                let cmds = ComStSt25sdkFtmprotocolFtmCommands(comStSt25sdkType5St25dvST25DVTag: sdkTag)
-                self.ftmCommands = cmds
-                self.progressListener = SDKProgressListener(plugin: self)
-                self.nfcState = 4
-            }, catch: { ex in
-                exception = ex
-            }, finallyBlock: {})
+                 self.lastMemSize = Int(sdkTag.getMemSizeInBytes())
+                 self.lastNdefLen = 0
+                 if let ndefMsg = sdkTag.readNdefMessage() {
+                     self.lastNdefLen = Int(ndefMsg.getLength())
+                 }
 
-            if let ex = exception {
-                self.sendToastMessage(message: "ST25DVTag init error: \(ex.description)")
-                session.invalidate()
-                DispatchQueue.main.async { result([]) }
-                return
-            }
+                 let cmds = ComStSt25sdkFtmprotocolFtmCommands(comStSt25sdkType5St25dvST25DVTag: sdkTag)
+                 self.ftmCommands = cmds
+                 self.progressListener = SDKProgressListener(plugin: self)
+                 self.nfcState = 4
+             }, catch: { ex in
+                 exception = ex
+             }, finallyBlock: {})
+
+             if let ex = exception {
+                 self.sendToastMessage(message: "ST25DVTag init error: \(ex.description)")
+                 session.invalidate()
+                 DispatchQueue.main.async { result([]) }
+                 return
+             }
+
+             // isMailboxEnabled read in separate try-catch to avoid failing
+             // the entire init when mailbox check throws during FTM session
+             if let tag = self.st25DVTag {
+                 SwiftTryCatch.try({
+                     self.lastMailboxEnabled = tag.isMailboxEnabled(withBoolean: true)
+                 }, catch: { _ in }, finallyBlock: {})
+             }
 
             if self.ftmCommands != nil {
                 self.performFTMOperation(cmd: cmd, data: data, isoTag: isoTag, session: session, result: result)
@@ -762,9 +782,6 @@ extension NfcFtmPlugin: NFCNDEFReaderSessionDelegate {
         nfcState = 2
 
         guard let op = pendingOp else {
-            self.lastTagIdHex = tagIdHex
-            self.lastTechList = techList
-
              var returnVal: [String: Any] = [:]
              returnVal["k"] = "onDiscovered"
             returnVal["id"] = ""
@@ -968,27 +985,13 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
     private func sendTagInfoEvent() {
         guard let sink = eventSink else { return }
 
-        var mailboxEnabled = false
-        var memSize: Int = 0
-        var ndefLen: Int = 0
-
-        if let tag = st25DVTag {
-            SwiftTryCatch.try({
-                mailboxEnabled = tag.isMailboxEnabled(withBoolean: true)
-                memSize = Int(tag.getMemSizeInBytes())
-                if let ndefMsg = tag.readNdefMessage() {
-                    ndefLen = Int(ndefMsg.getLength())
-                }
-            }, catch: { _ in }, finallyBlock: {})
-        }
-
         var returnVal: [String: Any] = [:]
         returnVal["k"] = "onDiscovered"
         returnVal["id"] = lastTagIdHex
         returnVal["type"] = "[\(lastTechList.joined(separator: ", "))]"
-        returnVal["memSize"] = memSize
-        returnVal["ndefLength"] = ndefLen
-        returnVal["isFTMmode"] = isFTMmode && st25DVTag != nil && mailboxEnabled
+        returnVal["memSize"] = lastMemSize
+        returnVal["ndefLength"] = lastNdefLen
+        returnVal["isFTMmode"] = isFTMmode && st25DVTag != nil && lastMailboxEnabled
 
         DispatchQueue.main.async {
             sink(returnVal)
