@@ -128,7 +128,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     }
 
     private func handleOpenNFC(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        isFTMmode = false
+        isFTMmode = true
         cancelFTMTransfer()
         if #available(iOS 14.0, *) {
             startTagDiscoverySession(result: result, alertMessage: alertMessage(from: call))

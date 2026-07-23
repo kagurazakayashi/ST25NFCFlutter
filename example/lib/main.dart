@@ -142,7 +142,8 @@ class _MyAppState extends State<MyApp> {
               },
               child: const Text("Open FTM"),
             ),
-            Text("Tag: ${currentTag?.id ?? "---"} | $tagStatus | ${currentTag?.memSize ?? 0} bytes"),
+            Text(
+                "Tag: ${currentTag?.id ?? "---"} | $tagStatus | ${currentTag?.memSize ?? 0} bytes"),
             Text(nfcDataStr),
             TextButton(
               onPressed: () async {
@@ -206,9 +207,8 @@ class _MyAppState extends State<MyApp> {
               child: const Text("Open NFC NDEF"),
             ),
             TextButton(
-              onPressed: !isInitNFC
-                  ? null
-                  : () async {
+              onPressed: isInitNFC || isInitFTM
+                  ? () async {
                       _nfcFtmPlugin.readNdefTag().then((value) {
                         if (value == null || value.payload.isEmpty) {
                           BotToast.showText(
@@ -230,13 +230,13 @@ class _MyAppState extends State<MyApp> {
                         sendNDEFDataResult = value.data;
                         setState(() {});
                       });
-                    },
+                    }
+                  : null,
               child: const Text("Read NDEF"),
             ),
             TextButton(
-              onPressed: !isInitNFC
-                  ? null
-                  : () async {
+              onPressed: isInitNFC || isInitFTM
+                  ? () async {
 // byte[] textBytes = text.getBytes(Charset.forName("UTF-8"));
 // byte[] languageBytes = "en".getBytes(Charset.forName("US-ASCII"));
                       // List<int> payload = [];
@@ -261,7 +261,8 @@ class _MyAppState extends State<MyApp> {
                           text: "写入失败",
                         );
                       }
-                    },
+                    }
+                  : null,
               child: const Text("Write NDEF"),
             ),
             Text("NDEF Result: $sendNDEFDataResult"),

@@ -130,10 +130,7 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
 
   @override
   Future<bool> openFTM(NfcTagCallback onDiscovered, {String? alertMessage}) async {
-    nfcTagCallback = onDiscovered;
-    final result = await methodChannel.invokeMethod<bool>('openFTM',
-        {'alertMessage': alertMessage});
-    return result ?? false;
+    return openNFC(onDiscovered, alertMessage: alertMessage);
   }
 
   @override

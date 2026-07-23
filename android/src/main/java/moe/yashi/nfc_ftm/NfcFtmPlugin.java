@@ -184,7 +184,8 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
         result.success(nfcState);
         break;
       case "openNFC":
-        isFTMmode = false;
+      case "openFTM":
+        isFTMmode = true;
         if (mFtmCommands != null) {
           mFtmCommands.cancelCurrentTransfer();
           mFtmCommands = null;
@@ -196,16 +197,6 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       case "closeNFC":
         boolean isDone = disableReaderMode();
         result.success(isDone);
-        break;
-      case "openFTM":
-        isFTMmode = true;
-        if (mFtmCommands != null) {
-          mFtmCommands.cancelCurrentTransfer();
-          mFtmCommands = null;
-        }
-        if (openNFC(result)) {
-          result.success(true);
-        }
         break;
       case "getFTM":
         if (mST25DVTag == null) {
