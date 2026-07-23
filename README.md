@@ -68,37 +68,48 @@ NfcState state = await nfcFtm.getNfcState();
 
 ### Tag Discovery
 
+The `onDiscovered` callback is triggered not only when a tag is first detected,
+but also after each operation completes (`getFTM`, `sendFTMData`, `readFTMData`,
+`readNdefTag`, `writeNdefTag`), providing updated tag status.
+
 ```dart
-// Open NFC in NDEF mode — discovers any NFC tag
-await nfcFtm.openNFC((NfcTag tag) {
-  print('Tag discovered: ${tag.id}');
-  print('Technologies: ${tag.type}');
-  print('Memory size: ${tag.memSize} bytes');
-  print('NDEF length: ${tag.tagNDEFLength}');
-});
+NfcTag? currentTag;
 
 // Open NFC in FTM mode — discovers ST25DV tags and initializes FTM
 await nfcFtm.openFTM((NfcTag tag) {
-  print('Tag discovered: ${tag.id}');
+  currentTag = tag;
 
   // isFTMmode: true when the tag's mailbox is enabled (FTM mode)
   //            false when the tag is in NDEF mode or non-ST25DV
   if (tag.isFTMmode == true) {
     print('FTM mode tag, memSize: ${tag.memSize} bytes');
 
-    // Initialize FTM commands
+    // Initialize FTM commands (also triggers onDiscovered callback)
     bool ftmReady = await nfcFtm.getFTM();
     if (ftmReady) {
       print('FTM ready');
     }
   } else {
     print('NDEF mode tag');
-    // Read NDEF data from the tag
+    // Read NDEF data from the tag (also triggers onDiscovered callback)
     NdefTag? ndef = await nfcFtm.readNdefTag();
     if (ndef != null) {
       print('NDEF data: ${ndef.data}');
     }
   }
+});
+
+// onDiscovered callback fires again after each FTM transfer,
+// updating currentTag with latest tag status
+List<int> response = await nfcFtm.sendFTMData(data);
+// currentTag.isFTMmode reflects the tag's state after the transfer
+
+// Open NFC in NDEF mode — discovers any NFC tag
+await nfcFtm.openNFC((NfcTag tag) {
+  print('Tag discovered: ${tag.id}');
+  print('Technologies: ${tag.type}');
+  print('Memory size: ${tag.memSize} bytes');
+  print('NDEF length: ${tag.tagNDEFLength}');
 });
 
 // Close NFC session
@@ -165,8 +176,8 @@ nfcFtm.getToastStream().listen((message) {
 |--------|---------|-------------|
 | `isAvailable()` | `Future<bool>` | Check if NFC hardware is available |
 | `getNfcState()` | `Future<NfcState>` | Get current NFC state |
-| `openNFC(onDiscovered)` | `Future<bool>` | Start NFC session (NDEF mode), callback receives `NfcTag` with `isFTMmode` set to `false` |
-| `openFTM(onDiscovered)` | `Future<bool>` | Start NFC session (FTM mode), callback receives `NfcTag` with `isFTMmode` indicating actual mode |
+| `openNFC(onDiscovered)` | `Future<bool>` | Start NFC session (NDEF mode). Callback fires on tag discovery and after each NDEF/FTM operation with current tag info. |
+| `openFTM(onDiscovered)` | `Future<bool>` | Start NFC session (FTM mode). Callback fires on tag discovery and after each NDEF/FTM operation with current tag info, including `isFTMmode`. |
 | `closeNFC()` | `Future<bool>` | Close current NFC session |
 | `getFTM()` | `Future<bool>` | Initialize FTM commands. Returns `true` when FTM ready |
 | `sendFTMData(data, {tx, rx})` | `Future<List<int>>` | Send data via FTM, returns tag response |
@@ -192,13 +203,16 @@ enum NfcState {
 
 ### NfcTag
 
+Returned via `onDiscovered` callback during tag discovery and after each
+operation (`getFTM`, `sendFTMData`, `readFTMData`, `readNdefTag`, `writeNdefTag`).
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `String` | Tag UID (hex string) |
 | `type` | `List<String>` | Supported tag technologies (e.g., `NfcV`, `IsoDep`, `NfcA`) |
 | `memSize` | `int?` | Memory size in bytes (ST25DV only) |
 | `tagNDEFLength` | `int?` | NDEF message length in bytes |
-| `isFTMmode` | `bool?` | `true` when tag is ST25DV with mailbox enabled (FTM mode), `false` for NDEF mode or non-ST25DV tags |
+| `isFTMmode` | `bool?` | `true` when tag is ST25DV with mailbox enabled (FTM mode), `false` for NDEF mode or non-ST25DV tags. Updated after each operation. |
 | `ndefText` | `String?` | Decoded NDEF text content (iOS only during FTM discovery) |
 | `ndefLang` | `String?` | NDEF language code, e.g. "en" (iOS only during FTM discovery) |
 | `ndefPayload` | `List<int>?` | Raw NDEF payload bytes (iOS only during FTM discovery) |
