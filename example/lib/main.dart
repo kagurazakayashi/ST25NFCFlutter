@@ -32,6 +32,9 @@ class _MyAppState extends State<MyApp> {
   String sendFTMDataResult = "";
   String sendNDEFDataResult = "";
 
+  NfcTag? currentTag;
+  String tagStatus = "No tag";
+
   // static const platform = MethodChannel('moe.yashi.nfc_ftm_example/nfc');
   String nfcDataStr = "No NFC data scanned yet";
 
@@ -127,21 +130,24 @@ class _MyAppState extends State<MyApp> {
             TextButton(
               onPressed: () async {
                 isInitFTM = await _nfcFtmPlugin.openFTM((NfcTag tag) async {
+                  currentTag = tag;
+                  tagStatus = tag.isFTMmode == true ? "FTM Mode" : "NDEF Mode";
                   print(">> openFTM: $tag");
                   String nfcStr = jsonEncode(tag);
                   print(">> nfcStr: $nfcStr");
-                  // _nfcFtmPlugin.readNdefTag().then((value) {
-                  //   print(">> readNdefTag: $value");
-                  // });
+                  if (!mounted) return;
+                  setState(() {});
                 });
                 setState(() {});
               },
               child: const Text("Open FTM"),
             ),
+            Text("Tag: ${currentTag?.id ?? "---"} | $tagStatus | ${currentTag?.memSize ?? 0} bytes"),
             Text(nfcDataStr),
             TextButton(
               onPressed: () async {
                 isInitFTM = await _nfcFtmPlugin.getFTM();
+                // getFTM 完成后会通过 EventChannel 触发 onDiscovered 回调更新 currentTag
               },
               child: const Text("Get FTM"),
             ),
@@ -187,12 +193,13 @@ class _MyAppState extends State<MyApp> {
               onPressed: () async {
                 await _nfcFtmPlugin.closeNFC();
                 isInitNFC = await _nfcFtmPlugin.openNFC((NfcTag tag) async {
+                  currentTag = tag;
+                  tagStatus = "NDEF Mode";
                   print(">> openNFC: $tag");
                   String nfcStr = jsonEncode(tag);
                   print(">> nfcStr: $nfcStr");
-                  // _nfcFtmPlugin.readNdefTag().then((value) {
-                  //   print(">> readNdefTag: $value");
-                  // });
+                  if (!mounted) return;
+                  setState(() {});
                 });
                 setState(() {});
               },
