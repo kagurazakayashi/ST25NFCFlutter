@@ -96,14 +96,14 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         switch call.method {
         case "isAvailable": handleIsAvailable(result)
         case "state": result(nfcState)
-        case "openNFC": handleOpenNFC(result)
+        case "openNFC": handleOpenNFC(call, result)
         case "closeNFC": handleCloseNFC(result)
-        case "openFTM": handleOpenFTM(result)
+        case "openFTM": handleOpenFTM(call, result)
         case "getFTM": handleGetFTM(result)
         case "sendFTMData": handleSendFTMData(call, result)
         case "readFTMData": handleReadFTMData(call, result)
         case "FTMcancel": handleFTMcancel(result)
-        case "NDEF@read": handleNDEFRead(result)
+        case "NDEF@read": handleNDEFRead(call, result)
         case "NDEF@write": handleNDEFWrite(call, result)
         default: result(FlutterMethodNotImplemented)
         }
@@ -120,11 +120,18 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     // MARK: - openNFC / closeNFC / openFTM
 
-    private func handleOpenNFC(_ result: @escaping FlutterResult) {
+    private let defaultAlertMessage = "Hold smartphone near NFC tag"
+
+    private func alertMessage(from call: FlutterMethodCall) -> String? {
+        guard let args = call.arguments as? [String: Any] else { return nil }
+        return args["alertMessage"] as? String
+    }
+
+    private func handleOpenNFC(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         isFTMmode = false
         cancelFTMTransfer()
         if #available(iOS 14.0, *) {
-            startTagDiscoverySession(result: result)
+            startTagDiscoverySession(result: result, alertMessage: alertMessage(from: call))
         } else {
             nfcState = 1
             result(true)
@@ -135,11 +142,11 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         result(disableReaderMode())
     }
 
-    private func handleOpenFTM(_ result: @escaping FlutterResult) {
+    private func handleOpenFTM(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         isFTMmode = true
         cancelFTMTransfer()
         if #available(iOS 14.0, *) {
-            startTagDiscoverySession(result: result)
+            startTagDiscoverySession(result: result, alertMessage: alertMessage(from: call))
         } else {
             nfcState = 1
             result(true)
@@ -180,7 +187,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "data required", details: nil))
             return
         }
-        startFTMSession(result: result, cmd: FTM_CMD_SEND_DATA, data: [UInt8](sendData.data))
+        startFTMSession(result: result, cmd: FTM_CMD_SEND_DATA, data: [UInt8](sendData.data), alertMessage: alertMessage(from: call))
     }
 
     private func handleReadFTMData(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -190,7 +197,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "data required", details: nil))
             return
         }
-        startFTMSession(result: result, cmd: FTM_CMD_READ_DATA, data: [UInt8](rsendData.data))
+        startFTMSession(result: result, cmd: FTM_CMD_READ_DATA, data: [UInt8](rsendData.data), alertMessage: alertMessage(from: call))
     }
 
     // MARK: - FTMcancel
@@ -206,8 +213,8 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     // MARK: - NDEF@read / NDEF@write
 
-    private func handleNDEFRead(_ result: @escaping FlutterResult) {
-        startNDEFReadSession(result: result)
+    private func handleNDEFRead(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+        startNDEFReadSession(result: result, alertMessage: alertMessage(from: call))
     }
 
     private func handleNDEFWrite(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -217,7 +224,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "data required", details: nil))
             return
         }
-        startNDEFWriteSession(result: result, text: data)
+        startNDEFWriteSession(result: result, text: data, alertMessage: alertMessage(from: call))
     }
 
     // MARK: - isNFCEnabled
@@ -229,7 +236,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     // MARK: - Start NDEF Read Session
 
-    private func startNDEFReadSession(result: @escaping FlutterResult) {
+    private func startNDEFReadSession(result: @escaping FlutterResult, alertMessage: String? = nil) {
         guard ndefSession == nil else {
             sendToastMessage(message: "NFC session busy, please wait")
             result(nil)
@@ -246,14 +253,14 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             queue: nil,
             invalidateAfterFirstRead: true
         )
-        ndefSession?.alertMessage = "Hold smartphone near NFC tag"
+        ndefSession?.alertMessage = alertMessage ?? defaultAlertMessage
         ndefSession?.begin()
     }
 
     // MARK: - Start NDEF Write Session
 
     @available(iOS 13.0, *)
-    private func startNDEFWriteSessionViaTagReader(result: @escaping FlutterResult, text: String) {
+    private func startNDEFWriteSessionViaTagReader(result: @escaping FlutterResult, text: String, alertMessage: String? = nil) {
         guard tagSession == nil else {
             sendToastMessage(message: "NFC session busy, please wait")
             result(false)
@@ -270,13 +277,13 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             delegate: self,
             queue: nil
         )
-        tagSession?.alertMessage = "Hold smartphone near NFC tag"
+        tagSession?.alertMessage = alertMessage ?? defaultAlertMessage
         tagSession?.begin()
     }
 
-    private func startNDEFWriteSession(result: @escaping FlutterResult, text: String) {
+    private func startNDEFWriteSession(result: @escaping FlutterResult, text: String, alertMessage: String? = nil) {
         if #available(iOS 13.0, *) {
-            startNDEFWriteSessionViaTagReader(result: result, text: text)
+            startNDEFWriteSessionViaTagReader(result: result, text: text, alertMessage: alertMessage)
         } else {
             sendToastMessage(message: "NDEF write requires iOS 13.0+")
             result(false)
@@ -286,7 +293,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     // MARK: - Start Tag Discovery Session
 
     @available(iOS 14.0, *)
-    private func startTagDiscoverySession(result: @escaping FlutterResult) {
+    private func startTagDiscoverySession(result: @escaping FlutterResult, alertMessage: String? = nil) {
         guard tagSession == nil else {
             sendToastMessage(message: "NFC session busy, please wait")
             result(false)
@@ -303,7 +310,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             delegate: self,
             queue: nil
         )
-        tagSession?.alertMessage = "Hold smartphone near NFC tag"
+        tagSession?.alertMessage = alertMessage ?? defaultAlertMessage
         tagSession?.begin()
         nfcState = 1
         result(true)
@@ -312,7 +319,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     // MARK: - Start FTM Session
 
     @available(iOS 14.0, *)
-    private func startFTMSessionViaTagReader(result: @escaping FlutterResult, cmd: UInt8, data: [UInt8]) {
+    private func startFTMSessionViaTagReader(result: @escaping FlutterResult, cmd: UInt8, data: [UInt8], alertMessage: String? = nil) {
         guard tagSession == nil else {
             sendToastMessage(message: "NFC session busy, please wait")
             result([])
@@ -329,13 +336,13 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             delegate: self,
             queue: nil
         )
-        tagSession?.alertMessage = "Hold smartphone near NFC tag"
+        tagSession?.alertMessage = alertMessage ?? defaultAlertMessage
         tagSession?.begin()
     }
 
-    private func startFTMSession(result: @escaping FlutterResult, cmd: UInt8, data: [UInt8]) {
+    private func startFTMSession(result: @escaping FlutterResult, cmd: UInt8, data: [UInt8], alertMessage: String? = nil) {
         if #available(iOS 14.0, *) {
-            startFTMSessionViaTagReader(result: result, cmd: cmd, data: data)
+            startFTMSessionViaTagReader(result: result, cmd: cmd, data: data, alertMessage: alertMessage)
         } else {
             sendToastMessage(message: "FTM requires iOS 14.0+")
             result([])

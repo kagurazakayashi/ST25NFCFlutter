@@ -8,7 +8,7 @@ class MockNfcFtmPlatform
     with MockPlatformInterfaceMixin
     implements NfcFtmPlatform {
   @override
-  Future<NdefTag?> readNdefTag() => Future.value(
+  Future<NdefTag?> readNdefTag({String? alertMessage}) => Future.value(
         const NdefTag(
           language: "",
           data: "",
@@ -23,10 +23,10 @@ class MockNfcFtmPlatform
   Future<NfcState> getNfcState() => Future.value(NfcState.noAvailable);
 
   @override
-  Future<bool> openNFC(NfcTagCallback onDiscovered) => Future.value(false);
+  Future<bool> openNFC(NfcTagCallback onDiscovered, {String? alertMessage}) => Future.value(false);
 
   @override
-  Future<bool> openFTM(NfcTagCallback onDiscovered) => Future.value(false);
+  Future<bool> openFTM(NfcTagCallback onDiscovered, {String? alertMessage}) => Future.value(false);
 
   @override
   Future<bool> closeNFC() => Future.value(false);
@@ -57,18 +57,18 @@ class MockNfcFtmPlatform
 
   @override
   Future<List<int>> readFTMData(List<int> data,
-      {TransmissionProgress? tProgress, ReceptionProgress? rProgress}) {
+      {TransmissionProgress? tProgress, ReceptionProgress? rProgress, String? alertMessage}) {
     throw UnimplementedError();
   }
 
   @override
   Future<List<int>> sendFTMData(List<int> data,
-      {TransmissionProgress? tProgress, ReceptionProgress? rProgress}) {
+      {TransmissionProgress? tProgress, ReceptionProgress? rProgress, String? alertMessage}) {
     throw UnimplementedError();
   }
 
   @override
-  Future<bool> writeNdefTag(String data) {
+  Future<bool> writeNdefTag(String data, {String? alertMessage}) {
     throw UnimplementedError();
   }
   
@@ -79,6 +79,7 @@ class MockNfcFtmPlatform
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   final NfcFtmPlatform initialPlatform = NfcFtmPlatform.instance;
 
   test('$MethodChannelNfcFtm is the default instance', () {

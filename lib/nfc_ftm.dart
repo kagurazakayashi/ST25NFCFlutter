@@ -11,12 +11,12 @@ class NfcFtm {
     return NfcFtmPlatform.instance.getNfcState();
   }
 
-  Future<bool> openNFC(NfcTagCallback onDiscovered) {
-    return NfcFtmPlatform.instance.openNFC(onDiscovered);
+  Future<bool> openNFC(NfcTagCallback onDiscovered, {String? alertMessage}) {
+    return NfcFtmPlatform.instance.openNFC(onDiscovered, alertMessage: alertMessage);
   }
 
-  Future<bool> openFTM(NfcTagCallback onDiscovered) {
-    return NfcFtmPlatform.instance.openFTM(onDiscovered);
+  Future<bool> openFTM(NfcTagCallback onDiscovered, {String? alertMessage}) {
+    return NfcFtmPlatform.instance.openFTM(onDiscovered, alertMessage: alertMessage);
   }
 
   Future<bool> closeNFC() {
@@ -73,11 +73,13 @@ class NfcFtm {
     List<int> data, {
     TransmissionProgress? transmissionProgress,
     ReceptionProgress? receptionProgress,
+    String? alertMessage,
   }) async {
     return NfcFtmPlatform.instance.sendFTMData(
       data,
       tProgress: transmissionProgress,
       rProgress: receptionProgress,
+      alertMessage: alertMessage,
     );
   }
 
@@ -85,11 +87,13 @@ class NfcFtm {
     List<int> data, {
     TransmissionProgress? transmissionProgress,
     ReceptionProgress? receptionProgress,
+    String? alertMessage,
   }) async {
     return NfcFtmPlatform.instance.readFTMData(
       data,
       tProgress: transmissionProgress,
       rProgress: receptionProgress,
+      alertMessage: alertMessage,
     );
   }
 
@@ -97,12 +101,12 @@ class NfcFtm {
     return NfcFtmPlatform.instance.cancelTransfer();
   }
 
-  Future<NdefTag?> readNdefTag() {
-    return NfcFtmPlatform.instance.readNdefTag();
+  Future<NdefTag?> readNdefTag({String? alertMessage}) {
+    return NfcFtmPlatform.instance.readNdefTag(alertMessage: alertMessage);
   }
 
-  Future<bool> writeNdefTag(String data) {
-    return NfcFtmPlatform.instance.writeNdefTag(data);
+  Future<bool> writeNdefTag(String data, {String? alertMessage}) {
+    return NfcFtmPlatform.instance.writeNdefTag(data, alertMessage: alertMessage);
   }
 
   Stream<String> getToastStream() {

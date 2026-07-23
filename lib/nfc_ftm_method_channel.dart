@@ -121,16 +121,18 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
-  Future<bool> openNFC(NfcTagCallback onDiscovered) async {
+  Future<bool> openNFC(NfcTagCallback onDiscovered, {String? alertMessage}) async {
     nfcTagCallback = onDiscovered;
-    final result = await methodChannel.invokeMethod<bool>('openNFC');
+    final result = await methodChannel.invokeMethod<bool>('openNFC',
+        {'alertMessage': alertMessage});
     return result ?? false;
   }
 
   @override
-  Future<bool> openFTM(NfcTagCallback onDiscovered) async {
+  Future<bool> openFTM(NfcTagCallback onDiscovered, {String? alertMessage}) async {
     nfcTagCallback = onDiscovered;
-    final result = await methodChannel.invokeMethod<bool>('openFTM');
+    final result = await methodChannel.invokeMethod<bool>('openFTM',
+        {'alertMessage': alertMessage});
     return result ?? false;
   }
 
@@ -151,11 +153,12 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
     List<int> data, {
     TransmissionProgress? tProgress,
     ReceptionProgress? rProgress,
+    String? alertMessage,
   }) async {
     transmissionProgress = tProgress;
     receptionProgress = rProgress;
     final result = await methodChannel.invokeMethod('sendFTMData',
-        {'data': data});
+        {'data': data, 'alertMessage': alertMessage});
     if (result is List) {
       return result.map<int>((e) => e is int ? e : 0).toList();
     }
@@ -167,11 +170,12 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
     List<int> data, {
     TransmissionProgress? tProgress,
     ReceptionProgress? rProgress,
+    String? alertMessage,
   }) async {
     transmissionProgress = tProgress;
     receptionProgress = rProgress;
     final result = await methodChannel.invokeMethod('readFTMData',
-        {'data': data});
+        {'data': data, 'alertMessage': alertMessage});
     if (result is List) {
       return result.map<int>((e) => e is int ? e : 0).toList();
     }
@@ -184,8 +188,9 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
-  Future<NdefTag?> readNdefTag() async {
-    final result = await methodChannel.invokeMethod<Map>('NDEF@read');
+  Future<NdefTag?> readNdefTag({String? alertMessage}) async {
+    final result = await methodChannel.invokeMethod<Map>('NDEF@read',
+        {'alertMessage': alertMessage});
     if (result == null) {
       return null;
     }
@@ -209,10 +214,10 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
   }
 
   @override
-  Future<bool> writeNdefTag(String data) async {
+  Future<bool> writeNdefTag(String data, {String? alertMessage}) async {
     final result = await methodChannel.invokeMethod<bool>(
       'NDEF@write',
-      {'data': data},
+      {'data': data, 'alertMessage': alertMessage},
     );
     return result ?? false;
   }

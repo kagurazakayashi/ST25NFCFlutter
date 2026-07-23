@@ -34,11 +34,11 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     throw UnimplementedError('getNfcState() has not been implemented.');
   }
 
-  Future<bool> openNFC(NfcTagCallback onDiscovered) {
+  Future<bool> openNFC(NfcTagCallback onDiscovered, {String? alertMessage}) {
     throw UnimplementedError('openNFC() has not been implemented.');
   }
 
-  Future<bool> openFTM(NfcTagCallback onDiscovered) {
+  Future<bool> openFTM(NfcTagCallback onDiscovered, {String? alertMessage}) {
     throw UnimplementedError('openFTM() has not been implemented.');
   }
 
@@ -54,6 +54,7 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     List<int> data, {
     TransmissionProgress? tProgress,
     ReceptionProgress? rProgress,
+    String? alertMessage,
   }) async {
     throw UnimplementedError('sendFTMData() has not been implemented.');
   }
@@ -62,6 +63,7 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     List<int> data, {
     TransmissionProgress? tProgress,
     ReceptionProgress? rProgress,
+    String? alertMessage,
   }) async {
     throw UnimplementedError('readFTMData() has not been implemented.');
   }
@@ -70,11 +72,11 @@ abstract class NfcFtmPlatform extends PlatformInterface {
     throw UnimplementedError('cancelTransfer() has not been implemented.');
   }
 
-  Future<NdefTag?> readNdefTag() {
+  Future<NdefTag?> readNdefTag({String? alertMessage}) {
     throw UnimplementedError('readNdefTag() has not been implemented.');
   }
 
-  Future<bool> writeNdefTag(String data){
+  Future<bool> writeNdefTag(String data, {String? alertMessage}) {
     throw UnimplementedError('writeNdefTag() has not been implemented.');
   }
 
