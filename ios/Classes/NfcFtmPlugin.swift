@@ -688,58 +688,37 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         session: NFCTagReaderSession,
         result: @escaping FlutterResult
     ) {
-        guard let ndefTag = isoTag as? NFCNDEFTag else {
-            sendToastMessage(message: "Tag does not support NFCNDEFTag")
-            session.invalidate()
-            result(false)
-            return
-        }
-        guard ndefTag.isAvailable else {
-            sendToastMessage(message: "NDEF tag not available")
-            session.invalidate()
-            result(false)
-            return
-        }
-        guard let ndefMessage = buildTextNDEFMessage(text: text) else {
-            sendToastMessage(message: "Failed to build NDEF message")
-            session.invalidate()
-            result(false)
-            return
-        }
-        ndefTag.writeNDEF(ndefMessage) { writeError in
-            if let nfcError = writeError as? NFCReaderError,
-               nfcError.code == .ndefReaderSessionErrorZeroLengthMessage {
-                self.sendToastMessage(message: "write NDEF success")
-                self.sendTagInfoEvent()
-                session.invalidate()
-                result(true)
-                return
-            }
-            if let writeError = writeError {
-                self.sendToastMessage(message: "write NDEF error: \(writeError.localizedDescription)")
-                self.sendTagInfoEvent()
-                session.invalidate()
-                result(false)
-                return
-            }
-            self.sendToastMessage(message: "write NDEF success")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            let rf = iOSRFReaderInterface(isoTag: isoTag, session: session)
+            var writeSuccess = false
+
+            SwiftTryCatch.try({
+                let uidArray = IOSByteArray(nsData: Data(isoTag.identifier))
+                let sdkTag = ComStSt25sdkType5St25dvST25DVTag(
+                    comStSt25sdkRFReaderInterface: rf,
+                    with: uidArray
+                )
+                let ndefmsg = ComStSt25sdkNdefNDEFMsg()
+
+                let locale = JavaUtilLocale(nsString: "en")
+                let ndefRecord = ComStSt25sdkNdefTextRecord(
+                    nsString: text,
+                    with: locale,
+                    withBoolean: true
+                )
+                ndefmsg.addRecord(with: ndefRecord)
+                sdkTag.writeNdefMessage(with: ndefmsg)
+                writeSuccess = true
+            }, catch: { ex in
+                self.sendToastMessage(message: "write NDEF error: \(ex.description)")
+            }, finallyBlock: {})
+
             self.sendTagInfoEvent()
             session.invalidate()
-            result(true)
+            result(writeSuccess)
         }
-    }
-
-    private func buildTextNDEFMessage(text: String, lang: String = "en") -> NFCNDEFMessage? {
-        let locale = JavaUtilLocale(nsString: lang)
-        let sdkRecord = ComStSt25sdkNdefTextRecord(
-            nsString: text,
-            with: locale,
-            withBoolean: true
-        )
-        let sdkMsg = ComStSt25sdkNdefNDEFMsg()
-        sdkMsg.addRecord(with: sdkRecord)
-        guard let serialized = sdkMsg.serialize()?.toNSData() else { return nil }
-        return try? NFCNDEFMessage(data: serialized)
     }
 
     // MARK: - Toast Message

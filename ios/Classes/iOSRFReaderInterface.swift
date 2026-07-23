@@ -30,14 +30,27 @@ class iOSRFReaderInterface: NSObject, ComStSt25sdkRFReaderInterface {
         case "getSystemInfo":
             result = syncGetSystemInfo()
 
-        case "readSingleBlock":
-            let blockAddr = raw[ISO15693_HEADER_SIZE_UID]
-            result = syncReadSingleBlock(reqFlags: reqFlags, blockAddr: blockAddr)
+         case "readSingleBlock":
+             let blockAddr = raw[ISO15693_HEADER_SIZE_UID]
+             result = syncReadSingleBlock(reqFlags: reqFlags, blockAddr: blockAddr)
 
-        case "readMultipleBlock":
-            let blockAddr = Int(raw[ISO15693_HEADER_SIZE_UID])
-            let blockCount = Int(raw[raw.count - 1])
-            result = syncReadMultipleBlock(reqFlags: reqFlags, blockAddr: blockAddr, blockCount: blockCount)
+         case "writeSingleBlock":
+             let blockAddr = raw[ISO15693_HEADER_SIZE_UID]
+             let dataOffset = ISO15693_HEADER_SIZE_UID + 1
+             let blockData = raw.subdata(in: dataOffset..<raw.count)
+             result = syncWriteSingleBlock(reqFlags: reqFlags, blockAddr: blockAddr, data: blockData)
+
+         case "readMultipleBlock":
+             let blockAddr = Int(raw[ISO15693_HEADER_SIZE_UID])
+             let blockCount = Int(raw[raw.count - 1])
+             result = syncReadMultipleBlock(reqFlags: reqFlags, blockAddr: blockAddr, blockCount: blockCount)
+
+         case "writeMultipleBlock":
+             let blockAddr = Int(raw[ISO15693_HEADER_SIZE_UID])
+             let blockCount = Int(raw[raw.count - 1])
+             let dataOffset = ISO15693_HEADER_SIZE_UID + 1
+             let writeData = raw.subdata(in: dataOffset..<(raw.count - 1))
+             result = syncWriteMultipleBlock(reqFlags: reqFlags, blockAddr: blockAddr, blockCount: blockCount, data: writeData)
 
         case "readSingleBlockVicinity",
              "readMultipleBlockVicinity":
@@ -61,43 +74,86 @@ class iOSRFReaderInterface: NSObject, ComStSt25sdkRFReaderInterface {
         return result
     }
 
-    // MARK: - readSingleBlock (CoreNFC native)
+     // MARK: - readSingleBlock (CoreNFC native)
 
-    private func syncReadSingleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: UInt8) -> IOSByteArray {
-        let sem = DispatchSemaphore(value: 0)
-        var result: IOSByteArray?
-        isoTag.readSingleBlock(requestFlags: reqFlags, blockNumber: blockAddr) { data, error in
-            if error != nil {
-                result = IOSByteArray(nsData: Data([0x01, 0x0F]))
-            } else {
-                var resp = Data([0x00])
-                resp.append(data)
-                result = IOSByteArray(nsData: resp)
-            }
-            sem.signal()
-        }
-        sem.wait()
-        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
-    }
+     private func syncReadSingleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: UInt8) -> IOSByteArray {
+         let sem = DispatchSemaphore(value: 0)
+         var result: IOSByteArray?
+         isoTag.readSingleBlock(requestFlags: reqFlags, blockNumber: blockAddr) { data, error in
+             if error != nil {
+                 result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+             } else {
+                 var resp = Data([0x00])
+                 resp.append(data)
+                 result = IOSByteArray(nsData: resp)
+             }
+             sem.signal()
+         }
+         sem.wait()
+         return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
+     }
 
-    // MARK: - readMultipleBlock (CoreNFC native)
+     // MARK: - writeSingleBlock (CoreNFC native)
 
-    private func syncReadMultipleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: Int, blockCount: Int) -> IOSByteArray {
-        let sem = DispatchSemaphore(value: 0)
-        var result: IOSByteArray?
-        isoTag.readMultipleBlocks(requestFlags: reqFlags, blockRange: NSMakeRange(blockAddr, blockCount)) { blocks, error in
-            if error != nil {
-                result = IOSByteArray(nsData: Data([0x01, 0x0F]))
-            } else {
-                var resp = Data([0x00])
-                for b in blocks { resp.append(b) }
-                result = IOSByteArray(nsData: resp)
-            }
-            sem.signal()
-        }
-        sem.wait()
-        return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
-    }
+     private func syncWriteSingleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: UInt8, data: Data) -> IOSByteArray {
+         let sem = DispatchSemaphore(value: 0)
+         var result: IOSByteArray?
+         isoTag.writeSingleBlock(requestFlags: reqFlags, blockNumber: blockAddr, dataBlock: data) { error in
+             if error != nil {
+                 result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+             } else {
+                 result = IOSByteArray(nsData: Data([0x00]))
+             }
+             sem.signal()
+         }
+         sem.wait()
+         return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
+     }
+
+     // MARK: - readMultipleBlock (CoreNFC native)
+
+     private func syncReadMultipleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: Int, blockCount: Int) -> IOSByteArray {
+         let sem = DispatchSemaphore(value: 0)
+         var result: IOSByteArray?
+         isoTag.readMultipleBlocks(requestFlags: reqFlags, blockRange: NSMakeRange(blockAddr, blockCount)) { blocks, error in
+             if error != nil {
+                 result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+             } else {
+                 var resp = Data([0x00])
+                 for b in blocks { resp.append(b) }
+                 result = IOSByteArray(nsData: resp)
+             }
+             sem.signal()
+         }
+         sem.wait()
+         return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
+     }
+
+     // MARK: - writeMultipleBlock (CoreNFC native)
+
+     private func syncWriteMultipleBlock(reqFlags: NFCISO15693RequestFlag, blockAddr: Int, blockCount: Int, data: Data) -> IOSByteArray {
+         let sem = DispatchSemaphore(value: 0)
+         var result: IOSByteArray?
+         let range = NSMakeRange(blockAddr, blockCount)
+         var blocks: [Data] = []
+         let blockSize = data.count / max(blockCount, 1)
+         for i in 0..<blockCount {
+             let start = i * blockSize
+             if start < data.count {
+                 blocks.append(data.subdata(in: start..<min(start + blockSize, data.count)))
+             }
+         }
+         isoTag.writeMultipleBlocks(requestFlags: reqFlags, blockRange: range, dataBlocks: blocks) { error in
+             if error != nil {
+                 result = IOSByteArray(nsData: Data([0x01, 0x0F]))
+             } else {
+                 result = IOSByteArray(nsData: Data([0x00]))
+             }
+             sem.signal()
+         }
+         sem.wait()
+         return result ?? IOSByteArray(nsData: Data([0x01, 0x0F]))!
+     }
 
     // MARK: - sendRequest (for standard commands like 0x3B, 0x2B vicinity)
 
