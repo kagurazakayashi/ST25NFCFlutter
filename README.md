@@ -79,12 +79,25 @@ await nfcFtm.openNFC((NfcTag tag) {
 
 // Open NFC in FTM mode — discovers ST25DV tags and initializes FTM
 await nfcFtm.openFTM((NfcTag tag) {
-  print('FTM Tag discovered: ${tag.id}');
+  print('Tag discovered: ${tag.id}');
 
-  // Initialize FTM commands
-  bool ftmReady = await nfcFtm.getFTM();
-  if (ftmReady) {
-    print('FTM ready');
+  // isFTMmode: true when the tag's mailbox is enabled (FTM mode)
+  //            false when the tag is in NDEF mode or non-ST25DV
+  if (tag.isFTMmode == true) {
+    print('FTM mode tag, memSize: ${tag.memSize} bytes');
+
+    // Initialize FTM commands
+    bool ftmReady = await nfcFtm.getFTM();
+    if (ftmReady) {
+      print('FTM ready');
+    }
+  } else {
+    print('NDEF mode tag');
+    // Read NDEF data from the tag
+    NdefTag? ndef = await nfcFtm.readNdefTag();
+    if (ndef != null) {
+      print('NDEF data: ${ndef.data}');
+    }
   }
 });
 
@@ -152,8 +165,8 @@ nfcFtm.getToastStream().listen((message) {
 |--------|---------|-------------|
 | `isAvailable()` | `Future<bool>` | Check if NFC hardware is available |
 | `getNfcState()` | `Future<NfcState>` | Get current NFC state |
-| `openNFC(onDiscovered)` | `Future<bool>` | Start NFC session (NDEF mode), callback on tag found |
-| `openFTM(onDiscovered)` | `Future<bool>` | Start NFC session (FTM mode), callback on ST25DV tag found |
+| `openNFC(onDiscovered)` | `Future<bool>` | Start NFC session (NDEF mode), callback receives `NfcTag` with `isFTMmode` set to `false` |
+| `openFTM(onDiscovered)` | `Future<bool>` | Start NFC session (FTM mode), callback receives `NfcTag` with `isFTMmode` indicating actual mode |
 | `closeNFC()` | `Future<bool>` | Close current NFC session |
 | `getFTM()` | `Future<bool>` | Initialize FTM commands. Returns `true` when FTM ready |
 | `sendFTMData(data, {tx, rx})` | `Future<List<int>>` | Send data via FTM, returns tag response |
@@ -185,6 +198,11 @@ enum NfcState {
 | `type` | `List<String>` | Supported tag technologies (e.g., `NfcV`, `IsoDep`, `NfcA`) |
 | `memSize` | `int?` | Memory size in bytes (ST25DV only) |
 | `tagNDEFLength` | `int?` | NDEF message length in bytes |
+| `isFTMmode` | `bool?` | `true` when tag is ST25DV with mailbox enabled (FTM mode), `false` for NDEF mode or non-ST25DV tags |
+| `ndefText` | `String?` | Decoded NDEF text content (iOS only during FTM discovery) |
+| `ndefLang` | `String?` | NDEF language code, e.g. "en" (iOS only during FTM discovery) |
+| `ndefPayload` | `List<int>?` | Raw NDEF payload bytes (iOS only during FTM discovery) |
+| `ndefTag` | `NdefTag?` | Convenience getter for NDEF data (null if `ndefText` is empty) |
 
 ### NdefTag
 
