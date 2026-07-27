@@ -734,7 +734,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   // MARK: 从 ST25DVTag 对象中获取NDEF格式的信息
   private void readNdef(@NonNull Result result) {
     if (mST25DVTag == null) {
-      sendToastMessage("No tag available for NDEF read");
+      sendToastMessage("No NFC tag detected, please tap the NFC tag first.");
       activity.runOnUiThread(new Runnable() {
         @Override
         public void run() {
@@ -798,7 +798,7 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   // MARK: 向 ST25DVTag 写入 NDEF 格式的信息
   private void writeNdef(@NonNull Result result, String data) {
     if (mST25DVTag == null) {
-      sendToastMessage("No tag available for NDEF write");
+      sendToastMessage("No NFC tag detected, please tap the NFC tag first.");
       activity.runOnUiThread(new Runnable() {
         @Override
         public void run() {
@@ -837,6 +837,11 @@ public class NfcFtmPlugin implements FlutterPlugin, MethodCallHandler, ActivityA
             sendTagInfoEvent();
             result.success(finalIsSuccess);
           }
+        });
+        return null;
+      }
+    });
+  }
 
   // MARK: 把进度数据转发给 Flutter
   public void updateProgress(boolean isTransmitted, int tORrBytes, int acknowledgedBytes, int totalSize) {
