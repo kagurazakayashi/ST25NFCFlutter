@@ -214,7 +214,7 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     // MARK: - NDEF@read / NDEF@write
 
     private func handleNDEFRead(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        startNDEFReadSession(result: result, alertMessage: alertMessage(from: call))
+        startNDEFReadSessionViaTagReader(result: result, alertMessage: alertMessage(from: call))
     }
 
     private func handleNDEFWrite(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -234,10 +234,11 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         return NFCNDEFReaderSession.readingAvailable
     }
 
-    // MARK: - Start NDEF Read Session
+    // MARK: - Start NDEF Read Session (via TagReader, same as write/FTM)
 
-    private func startNDEFReadSession(result: @escaping FlutterResult, alertMessage: String? = nil) {
-        guard ndefSession == nil else {
+    @available(iOS 14.0, *)
+    private func startNDEFReadSessionViaTagReader(result: @escaping FlutterResult, alertMessage: String? = nil) {
+        guard tagSession == nil else {
             sendToastMessage(message: "NFC session busy, please wait")
             result(nil)
             return
@@ -248,13 +249,22 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             return
         }
         pendingOp = .ndefRead(result)
-        ndefSession = NFCNDEFReaderSession(
+        tagSession = NFCTagReaderSession(
+            pollingOption: [.iso15693],
             delegate: self,
-            queue: nil,
-            invalidateAfterFirstRead: true
+            queue: nil
         )
-        ndefSession?.alertMessage = alertMessage ?? defaultAlertMessage
-        ndefSession?.begin()
+        tagSession?.alertMessage = alertMessage ?? defaultAlertMessage
+        tagSession?.begin()
+    }
+
+    private func startNDEFReadSession(result: @escaping FlutterResult, alertMessage: String? = nil) {
+        if #available(iOS 14.0, *) {
+            startNDEFReadSessionViaTagReader(result: result, alertMessage: alertMessage)
+        } else {
+            sendToastMessage(message: "NDEF read requires iOS 14.0+")
+            result(nil)
+        }
     }
 
     // MARK: - Start NDEF Write Session
@@ -524,6 +534,63 @@ public class NfcFtmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             } else {
                 session.invalidate()
                 DispatchQueue.main.async { result([]) }
+            }
+        }
+    }
+
+    // MARK: - SDK Init + NDEF Read
+
+    @available(iOS 14.0, *)
+    private func initSDKTagThenNDEFRead(
+        isoTag: NFCISO15693Tag,
+        session: NFCTagReaderSession,
+        result: @escaping FlutterResult
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            var ndefData: [String: Any] = [:]
+            let rf = iOSRFReaderInterface(isoTag: isoTag, session: session)
+
+            var exception: NSException?
+
+            SwiftTryCatch.try({
+                let uidArray = IOSByteArray(nsData: Data(isoTag.identifier))
+                let sdkTag = ComStSt25sdkType5St25dvST25DVTag(
+                    comStSt25sdkRFReaderInterface: rf,
+                    with: uidArray
+                )
+                self.rfReaderInterface = rf
+                self.st25DVTag = sdkTag
+                self.nfcTag = sdkTag
+
+                self.lastMemSize = Int(sdkTag.getMemSizeInBytes())
+                self.lastNdefLen = 0
+
+                if let ndefMsg = sdkTag.readNdefMessage() {
+                    self.lastNdefLen = Int(ndefMsg.getLength())
+                    if let serialized = ndefMsg.serialize()?.toNSData(),
+                       let nfcMsg = try? NFCNDEFMessage(data: serialized) {
+                        if let parsed = iOSNdef.parseTextFromNDEF(nfcMsg) {
+                            ndefData["lang"] = parsed.lang
+                            ndefData["data"] = parsed.text
+                            ndefData["payload"] = FlutterStandardTypedData(bytes: parsed.payload)
+                        }
+                    }
+                }
+            }, catch: { ex in
+                exception = ex
+            }, finallyBlock: {})
+
+            session.invalidate()
+
+            if let ex = exception {
+                self.sendToastMessage(message: "NDEF read error: \(ex.description)")
+            }
+
+            DispatchQueue.main.async {
+                self.sendTagInfoEvent()
+                result(ndefData)
             }
         }
     }
@@ -866,6 +933,8 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
             switch op {
             case .ndefWrite(let result, _):
                 result(false)
+            case .ndefRead(let result):
+                result([:])
             case .ftmSend(let result, _, _):
                 result([])
             default:
@@ -917,6 +986,14 @@ extension NfcFtmPlugin: NFCTagReaderSessionDelegate {
             if let op = self.pendingOp {
                 self.pendingOp = nil
                 switch op {
+                case .ndefRead(let result):
+                    if let iso = isoTag {
+                        self.initSDKTagThenNDEFRead(isoTag: iso, session: session, result: result)
+                    } else {
+                        session.invalidate()
+                        result([:])
+                    }
+                    return
                 case .ndefWrite(let result, let text):
                     if let iso = isoTag {
                         self.writeNDEFViaNDEFTag(to: iso, text: text, session: session, result: result)

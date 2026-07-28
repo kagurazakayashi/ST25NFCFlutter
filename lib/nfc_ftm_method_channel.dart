@@ -200,8 +200,11 @@ class MethodChannelNfcFtm extends NfcFtmPlatform {
     if (result.containsKey('data')) {
       data = result['data'] as String;
     }
+    if (data.isEmpty) {
+      return null;
+    }
     if (result.containsKey('payload')) {
-      payload = result['payload'] as List<int>;
+      payload = List<int>.from(result['payload'] as List);
     }
     return NdefTag(
       language: lang,
